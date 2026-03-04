@@ -1,0 +1,1514 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>教師控制台 · BrainRoyale Command</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.6.1/socket.io.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=DM+Sans:wght@300;400;500;600&family=Bebas+Neue&display=swap');
+
+:root {
+  --bg:      #080b0f;
+  --bg1:     #0d1117;
+  --bg2:     #111820;
+  --bg3:     #161e29;
+  --border:  rgba(255,255,255,0.06);
+  --borderL: rgba(255,255,255,0.13);
+  --amber:   #f0a500;
+  --amberD:  rgba(240,165,0,0.14);
+  --amberG:  rgba(240,165,0,0.35);
+  --green:   #22c55e;
+  --greenD:  rgba(34,197,94,0.12);
+  --red:     #ef4444;
+  --redD:    rgba(239,68,68,0.12);
+  --blue:    #38bdf8;
+  --blueD:   rgba(56,189,248,0.10);
+  --purple:  #b040ff;
+  --text:    #e2e8f0;
+  --muted:   #64748b;
+  --dim:     #334155;
+  --mono: 'Share Tech Mono', monospace;
+  --sans: 'DM Sans', sans-serif;
+  --disp: 'Bebas Neue', sans-serif;
+  --r: 6px;
+  --t: 0.18s ease;
+}
+
+*, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
+html,body { height:100%; background:var(--bg); color:var(--text); font-family:var(--sans); font-size:14px; overflow:hidden; }
+
+body::before {
+  content:''; position:fixed; inset:0; pointer-events:none; z-index:9999;
+  background: repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,0.025) 2px,rgba(0,0,0,0.025) 4px);
+}
+
+/* ── LAYOUT ── */
+#shell {
+  display:grid;
+  grid-template-rows:52px 1fr;
+  grid-template-columns:264px 1fr 340px;
+  grid-template-areas:"top top top" "side main aside";
+  height:100vh;
+}
+
+/* ── TOPBAR ── */
+#top {
+  grid-area:top;
+  background:var(--bg1); border-bottom:1px solid var(--border);
+  display:flex; align-items:center; padding:0 20px; gap:16px;
+}
+.logo { font-family:var(--disp); font-size:21px; letter-spacing:2px; color:var(--amber); text-shadow:0 0 18px var(--amberG); flex-shrink:0; }
+.logo span { color:var(--muted); font-size:11px; letter-spacing:3px; font-family:var(--mono); margin-left:8px; }
+.divider { width:1px; height:24px; background:var(--borderL); flex-shrink:0; }
+.room-wrap { display:flex; align-items:center; gap:8px; background:var(--bg2); border:1px solid var(--borderL); border-radius:var(--r); padding:6px 10px; }
+.room-lbl { font-family:var(--mono); font-size:10px; color:var(--muted); letter-spacing:2px; text-transform:uppercase; }
+#room-in { background:none; border:none; outline:none; color:var(--amber); font-family:var(--mono); font-size:14px; width:120px; }
+#room-in::placeholder { color:var(--dim); }
+.btn-conn { padding:5px 14px; background:var(--amberD); border:1px solid var(--amber); border-radius:var(--r); color:var(--amber); font-family:var(--mono); font-size:11px; letter-spacing:1px; cursor:pointer; text-transform:uppercase; transition:var(--t); }
+.btn-conn:hover { background:var(--amberG); }
+#conn-status { display:flex; align-items:center; gap:6px; }
+.sdot { width:7px; height:7px; border-radius:50%; background:var(--dim); transition:background var(--t); }
+.sdot.ok { background:var(--green); box-shadow:0 0 6px rgba(34,197,94,.6); }
+.sdot.err { background:var(--red); }
+#stxt { font-family:var(--mono); font-size:10px; color:var(--muted); letter-spacing:1px; }
+#game-elapsed { font-family:var(--mono); font-size:13px; color:var(--amber); letter-spacing:2px; }
+#clock { font-family:var(--mono); font-size:11px; color:var(--dim); margin-left:auto; }
+
+/* ── SIDEBAR ── */
+#side { grid-area:side; background:var(--bg1); border-right:1px solid var(--border); overflow-y:auto; display:flex; flex-direction:column; }
+.sec { padding:12px 14px; border-bottom:1px solid var(--border); }
+.sec-lbl { font-family:var(--mono); font-size:9px; color:var(--dim); letter-spacing:2px; text-transform:uppercase; margin-bottom:10px; }
+
+.cbtn { width:100%; display:flex; align-items:center; gap:10px; padding:9px 12px; border-radius:var(--r); border:1px solid var(--borderL); background:var(--bg2); cursor:pointer; transition:var(--t); margin-bottom:6px; text-align:left; }
+.cbtn:last-child { margin-bottom:0; }
+.cbtn:hover { border-color:rgba(255,255,255,.22); background:var(--bg3); }
+.cbtn:disabled { opacity:0.32; cursor:not-allowed; }
+.cbtn .icon { font-size:16px; flex-shrink:0; }
+.cbtn .lbl { font-size:12px; font-weight:600; color:var(--text); }
+.cbtn .sub { font-size:10px; color:var(--muted); margin-top:1px; }
+.cbtn-start { border-color:rgba(34,197,94,.3); }
+.cbtn-start:hover:not(:disabled) { border-color:var(--green); background:var(--greenD); }
+.cbtn-stop:hover:not(:disabled) { border-color:var(--red); background:var(--redD); }
+.cbtn-pause:hover:not(:disabled) { border-color:var(--amber); background:var(--amberD); }
+.cbtn-neu:hover:not(:disabled) { border-color:rgba(255,255,255,.3); }
+
+.zrow { display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; }
+.zlbl { font-family:var(--mono); font-size:10px; color:var(--muted); }
+.zval { font-family:var(--mono); font-size:12px; color:var(--blue); }
+.ztrack { height:4px; background:var(--bg3); border-radius:2px; overflow:hidden; margin-bottom:8px; }
+.zfill  { height:100%; background:var(--blue); border-radius:2px; transition:width 1s ease; }
+
+textarea { width:100%; background:var(--bg2); border:1px solid var(--borderL); border-radius:var(--r); padding:8px 10px; color:var(--text); font-family:var(--sans); font-size:12px; resize:none; height:58px; outline:none; transition:border var(--t); margin-bottom:6px; }
+textarea:focus { border-color:rgba(255,255,255,.3); }
+textarea::placeholder { color:var(--dim); }
+
+.sgrid { display:grid; grid-template-columns:1fr 1fr; gap:6px; }
+.scard { background:var(--bg2); border:1px solid var(--border); border-radius:var(--r); padding:10px 12px; text-align:center; }
+.scard[data-a=g] { border-color:rgba(34,197,94,.2); }
+.scard[data-a=b] { border-color:rgba(56,189,248,.2); }
+.scard[data-a=r] { border-color:rgba(239,68,68,.2); }
+.sval { font-family:var(--disp); font-size:24px; letter-spacing:1px; }
+.slbl { font-family:var(--mono); font-size:8px; color:var(--dim); letter-spacing:1px; margin-top:2px; }
+
+/* ── MAIN (MAP + LOG) ── */
+#main { grid-area:main; display:grid; grid-template-rows:1fr 200px; overflow:hidden; }
+#map-area { position:relative; background:#060d05; overflow:hidden; }
+#map-cv { display:block; width:100%; height:100%; }
+.mc { position:absolute; font-family:var(--mono); font-size:9px; color:rgba(255,255,255,.18); padding:4px 6px; }
+.mc.tl{top:0;left:0}.mc.tr{top:0;right:0}.mc.bl{bottom:0;left:0}.mc.br{bottom:0;right:0}
+#zone-lbl { position:absolute; bottom:8px; left:50%; transform:translateX(-50%); font-family:var(--mono); font-size:10px; color:rgba(176,64,255,.7); letter-spacing:1px; white-space:nowrap; }
+#paused-ov { position:absolute; inset:0; background:rgba(0,0,0,.45); backdrop-filter:blur(2px); display:none; align-items:center; justify-content:center; }
+#paused-ov.active { display:flex; }
+.ptxt { font-family:var(--disp); font-size:48px; letter-spacing:8px; color:var(--amber); }
+#log-area { background:var(--bg1); border-top:1px solid var(--border); display:flex; flex-direction:column; overflow:hidden; }
+.lh { display:flex; align-items:center; justify-content:space-between; padding:6px 12px; border-bottom:1px solid var(--border); flex-shrink:0; }
+.lh-lbl { font-family:var(--mono); font-size:9px; color:var(--dim); letter-spacing:2px; text-transform:uppercase; }
+.lcl-btn { background:none; border:1px solid var(--borderL); border-radius:3px; color:var(--dim); font-size:10px; cursor:pointer; padding:2px 8px; }
+.lcl-btn:hover { color:var(--text); }
+#log { flex:1; overflow-y:auto; padding:4px 0; }
+.lrow { display:flex; align-items:baseline; gap:6px; padding:3px 12px; font-size:11px; }
+.lrow:hover { background:rgba(255,255,255,.025); }
+.lt { font-family:var(--mono); font-size:9px; color:var(--dim); flex-shrink:0; }
+.lb { font-family:var(--mono); font-size:8px; padding:1px 5px; border-radius:2px; flex-shrink:0; letter-spacing:.5px; }
+.lb-battle { background:rgba(56,189,248,.18); color:var(--blue); }
+.lb-elim   { background:var(--redD); color:var(--red); }
+.lb-zone   { background:rgba(176,64,255,.18); color:var(--purple); }
+.lb-sys    { background:var(--bg3); color:var(--muted); }
+.lb-win    { background:rgba(240,165,0,.2); color:var(--amber); }
+.lx { color:var(--muted); line-height:1.4; }
+.lx strong { color:var(--text); font-weight:500; }
+
+/* ── ASIDE (tabs: players | qbank) ── */
+#aside { grid-area:aside; background:var(--bg1); border-left:1px solid var(--border); display:flex; flex-direction:column; overflow:hidden; }
+.tab-bar { display:flex; border-bottom:1px solid var(--border); flex-shrink:0; }
+.tab-btn { flex:1; padding:10px 0; font-family:var(--mono); font-size:10px; letter-spacing:1.5px; text-transform:uppercase; color:var(--muted); background:none; border:none; cursor:pointer; transition:var(--t); border-bottom:2px solid transparent; }
+.tab-btn.active { color:var(--amber); border-bottom-color:var(--amber); }
+.tab-btn:hover:not(.active) { color:var(--text); }
+.tab-panel { flex:1; display:none; flex-direction:column; overflow:hidden; }
+.tab-panel.active { display:flex; }
+
+/* ── PLAYERS TAB ── */
+#acc-wrap { padding:14px; border-bottom:1px solid var(--border); flex-shrink:0; }
+.acc-row { display:flex; align-items:center; gap:16px; }
+.ring-w { position:relative; width:68px; height:68px; flex-shrink:0; }
+#acc-svg { transform:rotate(-90deg); }
+#acc-track { fill:none; stroke:var(--bg3); stroke-width:6; }
+#acc-fill  { fill:none; stroke:var(--green); stroke-width:6; stroke-linecap:round; transition:stroke-dashoffset .6s ease; filter:drop-shadow(0 0 4px rgba(34,197,94,.5)); }
+.ring-ct { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; }
+#acc-pct { font-family:var(--disp); font-size:17px; line-height:1; color:var(--green); }
+#acc-sub { font-family:var(--mono); font-size:8px; color:var(--dim); letter-spacing:1px; }
+.acc-bd { flex:1; }
+.arow { display:flex; justify-content:space-between; align-items:center; margin-bottom:5px; }
+.arl  { font-family:var(--mono); font-size:10px; color:var(--muted); letter-spacing:1px; }
+.arbar { width:70px; height:4px; background:var(--bg3); border-radius:2px; overflow:hidden; }
+.arfill { height:100%; border-radius:2px; transition:width .5s ease; }
+.arv { font-family:var(--mono); font-size:11px; color:var(--text); width:28px; text-align:right; }
+#psearch { width:100%; background:var(--bg2); border:none; border-bottom:1px solid var(--border); padding:8px 14px; color:var(--text); font-family:var(--sans); font-size:12px; outline:none; flex-shrink:0; }
+#psearch::placeholder { color:var(--dim); }
+#plist { flex:1; overflow-y:auto; }
+.prow { display:flex; align-items:center; gap:9px; padding:7px 13px; border-bottom:1px solid rgba(255,255,255,0.028); transition:background var(--t); }
+.prow:hover { background:rgba(255,255,255,0.018); }
+.prow.dead { opacity:0.38; }
+.prow.inb  { background:rgba(56,189,248,0.04); }
+.prank { font-family:var(--mono); font-size:10px; color:var(--dim); width:18px; text-align:right; flex-shrink:0; }
+.pavatar { width:26px; height:26px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-family:var(--mono); font-size:10px; font-weight:700; flex-shrink:0; position:relative; }
+.pavatar .bring { position:absolute; inset:-2px; border-radius:50%; border:2px solid var(--blue); display:none; animation:spin 2s linear infinite; }
+.prow.inb .bring { display:block; }
+@keyframes spin { to{transform:rotate(360deg)} }
+.pinfo { flex:1; min-width:0; }
+.pname { font-size:12px; font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.pstats { display:flex; gap:8px; margin-top:2px; }
+.pchip { font-family:var(--mono); font-size:9px; color:var(--dim); }
+.pchip.hi { color:var(--green); }
+.php { display:flex; gap:2px; flex-shrink:0; }
+.hpip { width:6px; height:10px; border-radius:1px; background:var(--red); box-shadow:0 0 4px rgba(239,68,68,.4); transition:all var(--t); }
+.hpip.e { background:var(--bg3); box-shadow:none; }
+.pacts { display:flex; gap:4px; flex-shrink:0; opacity:0; transition:opacity var(--t); }
+.prow:hover .pacts { opacity:1; }
+.abtn { width:22px; height:22px; border-radius:4px; border:1px solid var(--borderL); background:var(--bg2); color:var(--muted); font-size:11px; cursor:pointer; display:flex; align-items:center; justify-content:center; transition:var(--t); line-height:1; }
+.abtn:hover { color:var(--text); border-color:rgba(255,255,255,.25); }
+.abtn.kick:hover { color:var(--red); border-color:var(--red); background:var(--redD); }
+#qstats { border-top:1px solid var(--border); flex-shrink:0; max-height:160px; overflow-y:auto; }
+.qrow { padding:6px 14px; display:flex; align-items:center; gap:10px; border-bottom:1px solid rgba(255,255,255,0.028); }
+.qid { font-family:var(--mono); font-size:9px; color:var(--dim); width:26px; flex-shrink:0; }
+.qtxt { flex:1; font-size:11px; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; }
+.qbar { width:60px; height:4px; background:var(--bg3); border-radius:2px; overflow:hidden; flex-shrink:0; }
+.qfill { height:100%; border-radius:2px; transition:width .5s ease; }
+.qpct { font-family:var(--mono); font-size:10px; width:30px; text-align:right; flex-shrink:0; }
+
+/* ── QBANK TAB ── */
+#qbank-panel { padding:0; }
+.qb-toolbar { display:flex; gap:6px; padding:10px 12px; border-bottom:1px solid var(--border); flex-shrink:0; align-items:center; }
+.qb-toolbar-title { font-family:var(--mono); font-size:9px; color:var(--dim); letter-spacing:2px; flex:1; text-transform:uppercase; }
+.qb-btn { padding:4px 10px; border-radius:4px; border:1px solid var(--borderL); background:var(--bg2); color:var(--muted); font-family:var(--mono); font-size:10px; cursor:pointer; transition:var(--t); white-space:nowrap; }
+.qb-btn:hover { color:var(--text); border-color:rgba(255,255,255,.25); }
+.qb-btn.primary { border-color:rgba(240,165,0,.4); color:var(--amber); background:var(--amberD); }
+.qb-btn.primary:hover { background:var(--amberG); }
+.qb-btn.danger { border-color:rgba(239,68,68,.3); color:var(--red); }
+.qb-btn.danger:hover { background:var(--redD); }
+.qb-btn.success { border-color:rgba(34,197,94,.3); color:var(--green); }
+.qb-btn.success:hover { background:var(--greenD); }
+
+/* Bank list */
+#qb-bank-list { flex-shrink:0; max-height:210px; overflow-y:auto; border-bottom:1px solid var(--border); }
+.qb-bank-item {
+  display:flex; align-items:center; gap:8px;
+  padding:8px 12px; border-bottom:1px solid rgba(255,255,255,.028);
+  cursor:pointer; transition:background var(--t);
+}
+.qb-bank-item:hover { background:rgba(255,255,255,.025); }
+.qb-bank-item.selected { background:rgba(240,165,0,.06); }
+.qb-bank-check { width:14px; height:14px; border-radius:3px; border:1px solid var(--borderL); display:flex; align-items:center; justify-content:center; flex-shrink:0; font-size:9px; transition:var(--t); }
+.qb-bank-item.in-room .qb-bank-check { background:var(--amber); border-color:var(--amber); color:#000; }
+.qb-bank-info { flex:1; min-width:0; }
+.qb-bank-name { font-size:12px; font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.qb-bank-meta { font-family:var(--mono); font-size:9px; color:var(--muted); margin-top:2px; }
+.qb-bank-count { font-family:var(--mono); font-size:10px; color:var(--dim); flex-shrink:0; }
+.qb-bank-actions { display:flex; gap:4px; opacity:0; transition:opacity var(--t); flex-shrink:0; }
+.qb-bank-item:hover .qb-bank-actions { opacity:1; }
+
+/* Room bank status bar */
+#qb-room-status {
+  padding:8px 12px; background:rgba(240,165,0,.05); border-bottom:1px solid var(--border);
+  font-family:var(--mono); font-size:10px; color:var(--amber); display:flex; align-items:center; gap:8px; flex-shrink:0;
+}
+#qb-room-status .qs-label { color:var(--dim); }
+#qb-apply-btn { margin-left:auto; }
+
+/* Question list area */
+#qb-q-area { flex:1; overflow-y:auto; }
+.qb-q-header { padding:8px 12px; background:var(--bg2); border-bottom:1px solid var(--border); display:flex; align-items:center; gap:8px; flex-shrink:0; position:sticky; top:0; z-index:1; }
+.qb-q-header-title { font-family:var(--mono); font-size:10px; color:var(--amber); flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.qb-q-empty { padding:24px; text-align:center; color:var(--dim); font-size:12px; }
+.qb-q-item { padding:9px 12px; border-bottom:1px solid rgba(255,255,255,.028); }
+.qb-q-item:hover { background:rgba(255,255,255,.018); }
+.qb-q-row1 { display:flex; align-items:flex-start; gap:6px; }
+.qb-q-num { font-family:var(--mono); font-size:9px; color:var(--dim); flex-shrink:0; margin-top:2px; width:20px; }
+.qb-q-text { flex:1; font-size:12px; line-height:1.4; }
+.qb-q-acts { display:flex; gap:4px; flex-shrink:0; opacity:0; transition:opacity var(--t); }
+.qb-q-item:hover .qb-q-acts { opacity:1; }
+.qb-q-opts { display:flex; gap:6px; flex-wrap:wrap; margin-top:4px; padding-left:26px; }
+.qb-q-opt { font-family:var(--mono); font-size:9px; color:var(--dim); padding:1px 6px; border-radius:3px; background:var(--bg3); }
+.qb-q-opt.ans { color:var(--green); background:var(--greenD); border:1px solid rgba(34,197,94,.3); }
+.qb-q-tags { padding:3px 0 0 26px; }
+.qb-q-tag { display:inline-block; font-family:var(--mono); font-size:8px; color:var(--muted); background:var(--bg3); padding:1px 5px; border-radius:2px; margin-right:3px; }
+.diff-easy   { color:var(--green); }
+.diff-medium { color:var(--amber); }
+.diff-hard   { color:var(--red); }
+
+/* Forms (modal) */
+.modal-bg { position:fixed; inset:0; background:rgba(0,0,0,.78); display:none; align-items:center; justify-content:center; z-index:600; backdrop-filter:blur(5px); }
+.modal-bg.open { display:flex; }
+.modal { background:var(--bg2); border:1px solid var(--borderL); border-radius:10px; width:min(520px,94vw); max-height:88vh; overflow-y:auto; display:flex; flex-direction:column; }
+.modal-head { padding:18px 22px 14px; border-bottom:1px solid var(--border); display:flex; align-items:center; gap:10px; flex-shrink:0; }
+.modal-title { font-family:var(--disp); font-size:18px; letter-spacing:1px; color:var(--amber); flex:1; }
+.modal-close { background:none; border:none; color:var(--dim); font-size:18px; cursor:pointer; padding:2px 6px; border-radius:4px; }
+.modal-close:hover { color:var(--text); background:var(--bg3); }
+.modal-body { padding:18px 22px; flex:1; }
+.modal-foot { padding:12px 22px; border-top:1px solid var(--border); display:flex; gap:8px; justify-content:flex-end; flex-shrink:0; }
+.form-row { margin-bottom:14px; }
+.form-row:last-child { margin-bottom:0; }
+.form-label { font-family:var(--mono); font-size:9px; color:var(--muted); letter-spacing:1.5px; text-transform:uppercase; margin-bottom:5px; display:block; }
+.form-input, .form-select, .form-textarea {
+  width:100%; background:var(--bg3); border:1px solid var(--borderL); border-radius:var(--r);
+  padding:8px 10px; color:var(--text); font-family:var(--sans); font-size:13px; outline:none;
+  transition:border var(--t);
+}
+.form-input:focus, .form-select:focus, .form-textarea:focus { border-color:rgba(240,165,0,.5); }
+.form-select { cursor:pointer; }
+.form-select option { background:var(--bg2); }
+.form-textarea { resize:vertical; min-height:60px; }
+.form-row-2 { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+.form-row-4 { display:grid; grid-template-columns:1fr 1fr 1fr 1fr; gap:8px; }
+.form-hint { font-size:11px; color:var(--dim); margin-top:4px; }
+.opt-list { display:flex; flex-direction:column; gap:6px; }
+.opt-row { display:flex; align-items:center; gap:6px; }
+.opt-label { font-family:var(--mono); font-size:11px; color:var(--dim); width:20px; flex-shrink:0; }
+.opt-input { flex:1; background:var(--bg3); border:1px solid var(--borderL); border-radius:4px; padding:6px 8px; color:var(--text); font-size:12px; outline:none; }
+.opt-input:focus { border-color:rgba(240,165,0,.5); }
+.opt-radio { width:16px; height:16px; cursor:pointer; accent-color:var(--green); }
+
+/* ── IMPORT MODAL ── */
+.import-drop {
+  border: 2px dashed var(--borderL); border-radius: 8px;
+  padding: 28px 20px; text-align: center; cursor: pointer;
+  transition: border var(--t), background var(--t);
+  background: var(--bg3); position: relative;
+}
+.import-drop:hover, .import-drop.over { border-color: var(--amber); background: var(--amberD); }
+.import-drop input[type=file] { position:absolute; inset:0; opacity:0; cursor:pointer; width:100%; height:100%; }
+.import-drop-icon { font-size: 32px; margin-bottom: 8px; }
+.import-drop-text { font-size: 13px; color: var(--muted); }
+.import-drop-hint { font-family: var(--mono); font-size: 10px; color: var(--dim); margin-top: 5px; }
+.import-template {
+  display:inline-flex; align-items:center; gap:5px;
+  font-family: var(--mono); font-size: 10px; color: var(--blue);
+  cursor: pointer; text-decoration: underline; margin-top: 8px;
+}
+.import-template:hover { color: var(--text); }
+.import-preview { margin-top: 14px; }
+.import-preview-hd {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 8px;
+}
+.import-preview-title { font-family: var(--mono); font-size: 10px; color: var(--muted); letter-spacing:1px; }
+.import-stats { font-family: var(--mono); font-size: 10px; }
+.import-stats .ok  { color: var(--green); }
+.import-stats .err { color: var(--red); margin-left: 10px; }
+.import-table-wrap { max-height: 240px; overflow-y: auto; border: 1px solid var(--borderL); border-radius: 4px; }
+table.import-tbl { width: 100%; border-collapse: collapse; font-size: 11px; }
+table.import-tbl th {
+  background: var(--bg2); padding: 6px 8px; text-align: left;
+  font-family: var(--mono); font-size: 9px; color: var(--dim); letter-spacing:1px;
+  position: sticky; top: 0; border-bottom: 1px solid var(--borderL);
+}
+table.import-tbl td { padding: 5px 8px; border-bottom: 1px solid rgba(255,255,255,.03); vertical-align: top; }
+table.import-tbl tr:last-child td { border-bottom: none; }
+table.import-tbl tr.row-err td { background: rgba(239,68,68,.06); }
+table.import-tbl tr.row-ok td  { }
+.import-err-msg { font-family: var(--mono); font-size: 9px; color: var(--red); margin-top: 2px; }
+.ans-badge { display:inline-block; padding:1px 6px; border-radius:3px; font-family:var(--mono); font-size:10px; background: var(--greenD); color: var(--green); border:1px solid rgba(34,197,94,.3); }
+.diff-badge { display:inline-block; padding:1px 5px; border-radius:3px; font-family:var(--mono); font-size:9px; }
+.diff-badge.easy   { background:rgba(34,197,94,.1);  color:var(--green); }
+.diff-badge.medium { background:rgba(240,165,0,.1);  color:var(--amber); }
+.diff-badge.hard   { background:rgba(239,68,68,.1);  color:var(--red);   }
+.import-result-bar {
+  padding: 10px 14px; border-radius: 6px; margin-top: 10px;
+  font-family: var(--mono); font-size: 11px; display: none;
+}
+.import-result-bar.success { background: var(--greenD); border: 1px solid rgba(34,197,94,.3); color: var(--green); }
+.import-result-bar.warn    { background: var(--amberD); border: 1px solid rgba(240,165,0,.3);  color: var(--amber); }
+.import-result-bar.error   { background: var(--redD);   border: 1px solid rgba(239,68,68,.3);  color: var(--red);   }
+
+/* Confirm */
+#cfm { position:fixed; inset:0; background:rgba(0,0,0,.72); display:none; align-items:center; justify-content:center; z-index:700; backdrop-filter:blur(4px); }
+#cfm.open { display:flex; }
+.cfmbox { background:var(--bg2); border:1px solid var(--borderL); border-radius:10px; padding:28px 32px; max-width:360px; width:90vw; text-align:center; }
+.cfmt { font-family:var(--disp); font-size:22px; letter-spacing:1px; color:var(--red); margin-bottom:10px; }
+.cfmb { font-size:13px; color:var(--muted); line-height:1.6; margin-bottom:24px; }
+.cfma { display:flex; gap:10px; justify-content:center; }
+.yes { padding:8px 24px; background:var(--redD); border:1px solid var(--red); border-radius:var(--r); color:var(--red); font-family:var(--mono); font-size:12px; cursor:pointer; transition:var(--t); text-transform:uppercase; }
+.yes:hover { background:rgba(239,68,68,.25); }
+.no  { padding:8px 24px; background:var(--bg3); border:1px solid var(--borderL); border-radius:var(--r); color:var(--muted); font-family:var(--mono); font-size:12px; cursor:pointer; transition:var(--t); text-transform:uppercase; }
+.no:hover  { color:var(--text); }
+
+/* Toast + misc */
+#toast-c { position:fixed; bottom:20px; left:50%; transform:translateX(-50%); z-index:800; display:flex; flex-direction:column-reverse; gap:8px; pointer-events:none; }
+.toast { background:var(--bg2); border:1px solid var(--borderL); border-radius:var(--r); padding:10px 16px; font-family:var(--mono); font-size:12px; color:var(--text); animation:tin .25s ease, tout .3s ease 2.5s forwards; }
+@keyframes tin  { from{opacity:0;transform:translateY(12px)} to{opacity:1;transform:translateY(0)} }
+@keyframes tout { to{opacity:0;transform:translateY(-8px)} }
+
+::-webkit-scrollbar { width:4px; height:4px; }
+::-webkit-scrollbar-track { background:transparent; }
+::-webkit-scrollbar-thumb { background:var(--bg3); border-radius:2px; }
+</style>
+</head>
+<body>
+<div id="shell">
+
+<!-- ── TOPBAR ── -->
+<div id="top">
+  <div class="logo">BRAINROYALE<span>CMD</span></div>
+  <div class="divider"></div>
+  <div class="room-wrap">
+    <span class="room-lbl">ROOM</span>
+    <input id="room-in" type="text" value="room_001" placeholder="room_001" maxlength="20" spellcheck="false">
+  </div>
+  <button class="btn-conn" onclick="connect()">Connect</button>
+  <div id="conn-status"><div class="sdot" id="sdot"></div><span id="stxt">OFFLINE</span></div>
+  <div class="divider"></div>
+  <div id="game-elapsed">──:──</div>
+  <div id="clock">──:──:──</div>
+</div>
+
+<!-- ── SIDEBAR ── -->
+<div id="side">
+  <div class="sec">
+    <div class="sec-lbl">Game Controls</div>
+    <button class="cbtn cbtn-start" id="bs" onclick="ctrl('start')" disabled>
+      <span class="icon">▶</span><div><div class="lbl">Start Game</div><div class="sub">Begin round for all players</div></div>
+    </button>
+    <button class="cbtn cbtn-pause" id="bp" onclick="ctrl('pause')" disabled>
+      <span class="icon">⏸</span><div><div class="lbl" id="pause-lbl">Pause / Resume</div><div class="sub">Freeze all movement</div></div>
+    </button>
+    <button class="cbtn cbtn-stop" id="bst" onclick="cfmStop()" disabled>
+      <span class="icon">⏹</span><div><div class="lbl">End Game</div><div class="sub">Force terminate round</div></div>
+    </button>
+  </div>
+  <div class="sec">
+    <div class="sec-lbl">Safe Zone</div>
+    <div class="zrow"><span class="zlbl">Current Radius</span><span class="zval" id="zv">2400 px</span></div>
+    <div class="ztrack"><div class="zfill" id="zbar" style="width:100%"></div></div>
+    <button class="cbtn cbtn-neu" id="bzs" onclick="doShrink()" disabled>
+      <span class="icon">🔴</span><div><div class="lbl">Force Shrink Now</div><div class="sub">Skip to next stage</div></div>
+    </button>
+  </div>
+  <div class="sec">
+    <div class="sec-lbl">Broadcast</div>
+    <textarea id="bc-input" placeholder="向所有玩家發送訊息…" maxlength="100"></textarea>
+    <button class="cbtn cbtn-neu" onclick="broadcast()">
+      <span class="icon">📢</span><div class="lbl">Send to All Players</div>
+    </button>
+  </div>
+  <div class="sec">
+    <div class="sec-lbl">Session Stats</div>
+    <div class="sgrid">
+      <div class="scard"><div class="sval" id="st-p">0</div><div class="slbl">Players</div></div>
+      <div class="scard" data-a="g"><div class="sval" id="st-a">0</div><div class="slbl">Alive</div></div>
+      <div class="scard" data-a="b"><div class="sval" id="st-b">0</div><div class="slbl">Battles</div></div>
+      <div class="scard" data-a="r"><div class="sval" id="st-e">0</div><div class="slbl">Eliminated</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- ── MAIN ── -->
+<div id="main">
+  <div id="map-area">
+    <canvas id="map-cv"></canvas>
+    <div class="mc tl">0,0</div><div class="mc tr">4800,0</div>
+    <div class="mc bl">0,4800</div><div class="mc br">4800,4800</div>
+    <div id="zone-lbl">Zone Radius: 2400px</div>
+    <div id="paused-ov"><div class="ptxt">PAUSED</div></div>
+  </div>
+  <div id="log-area">
+    <div class="lh">
+      <span class="lh-lbl">Battle Log</span>
+      <button class="lcl-btn" onclick="clearLog()">Clear</button>
+    </div>
+    <div id="log"></div>
+  </div>
+</div>
+
+<!-- ── ASIDE ── -->
+<div id="aside">
+  <div class="tab-bar">
+    <button class="tab-btn active" onclick="switchTab('players')" id="tab-players">👥 玩家</button>
+    <button class="tab-btn" onclick="switchTab('qbank')" id="tab-qbank">📚 題庫</button>
+  </div>
+
+  <!-- PLAYERS TAB -->
+  <div class="tab-panel active" id="panel-players">
+    <div id="acc-wrap">
+      <div class="sec-lbl">Answer Accuracy</div>
+      <div class="acc-row">
+        <div class="ring-w">
+          <svg id="acc-svg" width="68" height="68" viewBox="0 0 68 68">
+            <circle id="acc-track" cx="34" cy="34" r="28"/>
+            <circle id="acc-fill"  cx="34" cy="34" r="28" stroke-dasharray="175.9" stroke-dashoffset="175.9"/>
+          </svg>
+          <div class="ring-ct"><div id="acc-pct">--%</div><div id="acc-sub">CORRECT</div></div>
+        </div>
+        <div class="acc-bd">
+          <div class="arow"><span class="arl">CORRECT</span><div class="arbar"><div class="arfill" id="b-c" style="width:0%;background:var(--green)"></div></div><span class="arv" id="v-c">0</span></div>
+          <div class="arow"><span class="arl">WRONG</span><div class="arbar"><div class="arfill" id="b-w" style="width:0%;background:var(--red)"></div></div><span class="arv" id="v-w">0</span></div>
+          <div class="arow"><span class="arl">TIMEOUT</span><div class="arbar"><div class="arfill" id="b-t" style="width:0%;background:var(--amber)"></div></div><span class="arv" id="v-t">0</span></div>
+          <div class="arow" style="margin-top:5px;border-top:1px solid var(--border);padding-top:5px;">
+            <span class="arl">AVG TIME</span><span class="arv" id="v-avg">--s</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <input id="psearch" type="text" placeholder="搜尋玩家…" oninput="filterP(this.value)">
+    <div id="plist"></div>
+    <div id="qstats"><div id="qrows"></div></div>
+  </div>
+
+  <!-- QBANK TAB -->
+  <div class="tab-panel" id="panel-qbank">
+    <!-- Room bank status -->
+    <div id="qb-room-status">
+      <span class="qs-label">本場題庫：</span>
+      <span id="qb-room-info">尚未選取</span>
+      <button class="qb-btn primary" id="qb-apply-btn" onclick="applyRoomBanks()" style="padding:3px 8px;font-size:9px;">套用</button>
+    </div>
+    <!-- Bank list toolbar -->
+    <div class="qb-toolbar">
+      <span class="qb-toolbar-title">題庫列表</span>
+      <button class="qb-btn primary" onclick="openBankModal()">＋ 新增題庫</button>
+    </div>
+    <!-- Bank items -->
+    <div id="qb-bank-list"></div>
+    <!-- Question area -->
+    <div id="qb-q-area">
+      <div class="qb-q-empty" id="qb-q-empty">← 點選題庫查看試題</div>
+      <div id="qb-q-header" style="display:none">
+        <div class="qb-q-header">
+          <span class="qb-q-header-title" id="qb-q-header-title">試題</span>
+          <button class="qb-btn primary" id="qb-add-q-btn" onclick="openQModal()">＋ 新增試題</button>
+          <button class="qb-btn" id="qb-import-btn" onclick="openImportModal()" title="從 CSV / Excel 批次匯入">⬆ 匯入</button>
+        </div>
+      </div>
+      <div id="qb-q-list"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ BANK MODAL ══ -->
+<div class="modal-bg" id="modal-bank">
+  <div class="modal">
+    <div class="modal-head">
+      <span class="modal-title" id="bank-modal-title">新增題庫</span>
+      <button class="modal-close" onclick="closeBankModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="bank-edit-id">
+      <div class="form-row">
+        <label class="form-label">題庫名稱 *</label>
+        <input class="form-input" id="bank-name" placeholder="例：五年級自然第一章">
+      </div>
+      <div class="form-row form-row-2">
+        <div>
+          <label class="form-label">學年度</label>
+          <select class="form-select" id="bank-year">
+            <option value="113">113</option><option value="112">112</option>
+            <option value="111">111</option><option value="114">114</option>
+          </select>
+        </div>
+        <div>
+          <label class="form-label">年級</label>
+          <select class="form-select" id="bank-grade">
+            <option value="1">一年級</option><option value="2">二年級</option>
+            <option value="3">三年級</option><option value="4">四年級</option>
+            <option value="5" selected>五年級</option><option value="6">六年級</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-row">
+        <label class="form-label">科目</label>
+        <select class="form-select" id="bank-subject">
+          <option value="國語">國語</option>
+          <option value="數學">數學</option>
+          <option value="社會">社會</option>
+          <option value="自然" selected>自然</option>
+          <option value="英語">英語</option>
+          <option value="健康">健康與體育</option>
+          <option value="綜合">綜合活動</option>
+          <option value="其他">其他</option>
+        </select>
+      </div>
+      <div class="form-row">
+        <label class="form-label">章節</label>
+        <input class="form-input" id="bank-chapter" placeholder="例：第一章 地球與宇宙">
+      </div>
+      <div class="form-row">
+        <label class="form-label">備註說明</label>
+        <textarea class="form-textarea" id="bank-desc" placeholder="題庫用途、範圍說明等…" style="height:56px;"></textarea>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="qb-btn" onclick="closeBankModal()">取消</button>
+      <button class="qb-btn primary" onclick="submitBankForm()">儲存題庫</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ QUESTION MODAL ══ -->
+<div class="modal-bg" id="modal-q">
+  <div class="modal">
+    <div class="modal-head">
+      <span class="modal-title" id="q-modal-title">新增試題</span>
+      <button class="modal-close" onclick="closeQModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="q-edit-id">
+      <div class="form-row">
+        <label class="form-label">題目 *</label>
+        <textarea class="form-textarea" id="q-text" placeholder="輸入題目內容…" style="height:70px;"></textarea>
+      </div>
+      <div class="form-row">
+        <label class="form-label">選項（勾選正確答案）*</label>
+        <div class="opt-list">
+          <div class="opt-row"><input class="opt-radio" type="radio" name="qans" value="a" id="ans-a"><label for="ans-a" class="opt-label">A</label><input class="opt-input" id="opt-a" placeholder="選項 A"></div>
+          <div class="opt-row"><input class="opt-radio" type="radio" name="qans" value="b" id="ans-b"><label for="ans-b" class="opt-label">B</label><input class="opt-input" id="opt-b" placeholder="選項 B"></div>
+          <div class="opt-row"><input class="opt-radio" type="radio" name="qans" value="c" id="ans-c"><label for="ans-c" class="opt-label">C</label><input class="opt-input" id="opt-c" placeholder="選項 C"></div>
+          <div class="opt-row"><input class="opt-radio" type="radio" name="qans" value="d" id="ans-d"><label for="ans-d" class="opt-label">D</label><input class="opt-input" id="opt-d" placeholder="選項 D"></div>
+        </div>
+        <div class="form-hint">點選左方圓鈕設定正確答案</div>
+      </div>
+      <div class="form-row form-row-2">
+        <div>
+          <label class="form-label">難度</label>
+          <select class="form-select" id="q-diff">
+            <option value="easy">簡單 ⚡</option>
+            <option value="medium" selected>普通 ⚡⚡</option>
+            <option value="hard">困難 ⚡⚡⚡</option>
+          </select>
+        </div>
+        <div>
+          <label class="form-label">標籤（逗號分隔）</label>
+          <input class="form-input" id="q-tags" placeholder="例：地球,宇宙,科學">
+        </div>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="qb-btn" onclick="closeQModal()">取消</button>
+      <button class="qb-btn primary" onclick="submitQForm()">儲存試題</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ IMPORT MODAL ══ -->
+<div class="modal-bg" id="modal-import">
+  <div class="modal" style="width:min(680px,96vw);">
+    <div class="modal-head">
+      <span class="modal-title">批次匯入試題</span>
+      <button class="modal-close" onclick="closeImportModal()">✕</button>
+    </div>
+    <div class="modal-body">
+
+      <!-- 目標題庫提示 -->
+      <div style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-bottom:12px;">
+        匯入目標：<span id="import-target-name" style="color:var(--amber);">－</span>
+      </div>
+
+      <!-- 拖放 / 選檔 區域 -->
+      <div class="import-drop" id="import-drop"
+           ondragover="event.preventDefault();this.classList.add('over')"
+           ondragleave="this.classList.remove('over')"
+           ondrop="handleImportDrop(event)">
+        <input type="file" id="import-file-input" accept=".csv,.xlsx,.xls"
+               onchange="handleImportFile(this.files[0])">
+        <div class="import-drop-icon">📂</div>
+        <div class="import-drop-text">點擊選擇檔案，或將檔案拖放至此</div>
+        <div class="import-drop-hint">支援 .csv · .xlsx · .xls　最多 500 題</div>
+      </div>
+
+      <!-- 範本下載 -->
+      <div style="text-align:center;margin-top:8px;">
+        <span class="import-template" onclick="downloadTemplate('csv')">⬇ 下載 CSV 範本</span>
+        &nbsp;
+        <span class="import-template" onclick="downloadTemplate('xlsx')">⬇ 下載 Excel 範本</span>
+      </div>
+
+      <!-- 預覽區 -->
+      <div class="import-preview" id="import-preview" style="display:none">
+        <div class="import-preview-hd">
+          <span class="import-preview-title">PREVIEW</span>
+          <span class="import-stats">
+            <span class="ok" id="import-ok-count">0 筆正常</span>
+            <span class="err" id="import-err-count"></span>
+          </span>
+        </div>
+        <div class="import-table-wrap">
+          <table class="import-tbl">
+            <thead>
+              <tr>
+                <th>#</th><th>題目</th><th>A</th><th>B</th><th>C</th><th>D</th>
+                <th>答案</th><th>難度</th><th>標籤</th><th>狀態</th>
+              </tr>
+            </thead>
+            <tbody id="import-preview-body"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- 匯入結果提示 -->
+      <div class="import-result-bar" id="import-result-bar"></div>
+
+    </div>
+    <div class="modal-foot">
+      <button class="qb-btn" onclick="closeImportModal()">取消</button>
+      <button class="qb-btn success" id="import-submit-btn" onclick="submitImport()" disabled>
+        ✓ 確認匯入 <span id="import-submit-count"></span>
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ CONFIRM ══ -->
+<div id="cfm">
+  <div class="cfmbox">
+    <div class="cfmt" id="cfm-t">確認</div>
+    <div class="cfmb" id="cfm-b"></div>
+    <div class="cfma">
+      <button class="yes" id="cfm-y">確認</button>
+      <button class="no" onclick="closeCfm()">取消</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ TOAST ══ -->
+<div id="toast-c"></div>
+
+<script>
+// ════════════════════════════════════════════════
+//  STATE
+// ════════════════════════════════════════════════
+let socket=null, conn=false, gState='idle';
+let teacherRoom=null, cfmCb=null, filterText='';
+let gStartAt=null, elapsedTmr=null;
+let battles=0, elim=0, gCorrect=0, gWrong=0, gTimeout=0, gTimes=[];
+let players=new Map(), qStats=new Map();
+const MAP=4800, MAX_R=2400, MAX_HP=5;
+let zoneR=MAX_R;
+
+// QBank state
+let allBanks=[];          // [{id,name,schoolYear,grade,subject,chapter,questionCount,...}]
+let roomBankIds=new Set();// 已套用到本房間的題庫 ID
+let pendingBankIds=new Set(); // 教師勾選中（尚未套用）
+let activeBankId=null;    // 目前展開查看的題庫 ID
+let activeBankQuestions=[];// 題目陣列
+
+// ════════════════════════════════════════════════
+//  TAB SWITCH
+// ════════════════════════════════════════════════
+function switchTab(name){
+  document.querySelectorAll('.tab-btn').forEach(b=>b.classList.toggle('active', b.id==='tab-'+name));
+  document.querySelectorAll('.tab-panel').forEach(p=>p.classList.toggle('active', p.id==='panel-'+name));
+  if(name==='qbank' && socket && conn) {
+    socket.emit('qbank:get_all');
+    socket.emit('qbank:get_room_banks',{ roomId: getRoomId() });
+  }
+}
+
+// ════════════════════════════════════════════════
+//  CLOCK
+// ════════════════════════════════════════════════
+setInterval(()=>{
+  const n=new Date();
+  document.getElementById('clock').textContent=n.toTimeString().slice(0,8);
+},1000);
+
+function startElapsed(){
+  gStartAt=Date.now();
+  elapsedTmr=setInterval(()=>{
+    const s=Math.floor((Date.now()-gStartAt)/1000);
+    document.getElementById('game-elapsed').textContent=
+      String(Math.floor(s/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0');
+  },1000);
+}
+function stopElapsed(){ clearInterval(elapsedTmr); }
+
+// ════════════════════════════════════════════════
+//  CONNECT
+// ════════════════════════════════════════════════
+function getRoomId(){ return document.getElementById('room-in').value.trim()||'room_001'; }
+
+function connect(){
+  if(socket){ socket.disconnect(); }
+  teacherRoom=getRoomId();
+  socket=io({ query:{ role:'teacher' } });
+
+  socket.on('connect',()=>{
+    conn=true; setStatus('ok','ONLINE');
+    socket.emit('teacher:join',{ roomId:teacherRoom });
+    socket.emit('qbank:get_all');
+    socket.emit('qbank:get_room_banks',{ roomId:teacherRoom });
+    enableCtrl(true); syncBtns();
+  });
+  socket.on('disconnect',()=>{
+    conn=false; setStatus('err','OFFLINE'); enableCtrl(false); syncBtns();
+  });
+
+  socket.on('teacher:snapshot',snap=>{
+    if(snap.players) { players=new Map(snap.players.map(p=>[p.id,{...p,inBattle:p.inBattle||false}])); }
+    if(snap.totalBattles!==undefined) battles=snap.totalBattles;
+    if(snap.totalElim!==undefined) elim=snap.totalElim;
+    if(snap.globalCorrect!==undefined){ gCorrect=snap.globalCorrect; gWrong=snap.globalWrong; gTimeout=snap.globalTimeout; }
+    if(snap.avgAnswerMs!=null) gTimes=[snap.avgAnswerMs];
+    if(snap.questionList) snap.questionList.forEach(q=>qStats.set(q.qid,q));
+    if(snap.gameState) { gState=snap.gameState; syncBtns(); }
+    if(snap.zoneRadius!==undefined){ zoneR=snap.zoneRadius; }
+    renderAll();
+  });
+
+  socket.on('teacher:battle_event',({ battleId, playerAName, playerBName, questionText })=>{
+    battles++;
+    document.getElementById('st-b').textContent=battles;
+    const rp=players.get(battleId);
+    [...players.values()].filter(p=>p.name===playerAName||p.name===playerBName).forEach(p=>p.inBattle=true);
+    log('battle',`<strong>${esc(playerAName)}</strong> ⚔️ <strong>${esc(playerBName)}</strong>`);
+    renderList(); renderMap();
+  });
+  socket.on('teacher:battle_result',({ winnerId, loserId, winnerName, loserName, winnerAnsweredCorrectly, questionId, questionText, answerTimeMs })=>{
+    if(winnerAnsweredCorrectly) gCorrect++;
+    if(loserId) gWrong++;
+    if(answerTimeMs) gTimes.push(answerTimeMs);
+    if(questionId){
+      if(!qStats.has(questionId)) qStats.set(questionId,{ text:questionText, correct:0, wrong:0, timeout:0 });
+      const qs=qStats.get(questionId);
+      if(winnerAnsweredCorrectly) qs.correct++;
+      else qs.timeout++;
+      if(loserId) qs.wrong++;
+    }
+    [...players.values()].forEach(p=>p.inBattle=false);
+    log('battle', winnerId
+      ? `<strong>${esc(winnerName)}</strong> won vs <strong>${esc(loserName)}</strong>`
+      : `Draw — no winner`);
+    renderAll();
+  });
+  socket.on('teacher:hp_update',({ playerId, newHp })=>{
+    const p=players.get(playerId); if(p){ p.hp=newHp; renderRow(playerId); }
+  });
+  socket.on('teacher:eliminated',({ playerId, playerName, totalElim:te })=>{
+    const p=players.get(playerId); if(p){ p.isAlive=false; p.hp=0; p.inBattle=false; }
+    elim=te||elim+1;
+    document.getElementById('st-e').textContent=elim;
+    log('elim',`<strong>${esc(playerName)}</strong> eliminated`);
+    updateStats(); renderRow(playerId);
+  });
+  socket.on('teacher:player_joined',p=>{
+    players.set(p.id,{...p,wins:0,inBattle:false});
+    log('sys',`<strong>${esc(p.name)}</strong> joined`);
+    updateStats(); renderList(); renderMap();
+  });
+  socket.on('teacher:player_left',({ playerId, name })=>{
+    players.delete(playerId);
+    log('sys',`<strong>${esc(name)}</strong> left`);
+    updateStats(); renderList(); renderMap();
+  });
+  socket.on('zone:update',data=>{
+    zoneR=data.currentRadius;
+    const pct=(zoneR/MAX_R*100).toFixed(0);
+    document.getElementById('zv').textContent=Math.round(zoneR)+' px';
+    document.getElementById('zbar').style.width=pct+'%';
+    document.getElementById('zone-lbl').textContent=`Zone Radius: ${Math.round(zoneR)}px`;
+    renderMap();
+  });
+  socket.on('teacher:game_state',({ state:gs })=>{
+    gState=gs; syncBtns();
+    if(gs==='running'&&!gStartAt) startElapsed();
+    if(gs==='ended') stopElapsed();
+    document.getElementById('paused-ov').classList.toggle('active',gs==='paused');
+    log('sys','Game state → '+gs.toUpperCase());
+  });
+  socket.on('teacher:broadcast_ack',()=>toast('📢 Delivered'));
+
+  socket.on('qbank:import_result', ({ bankId, imported, errors, questionCount }) => {
+    const bar = document.getElementById('import-result-bar');
+    if (imported > 0 && errors.length === 0) {
+      bar.className = 'import-result-bar success';
+      bar.textContent = `✅ 成功匯入 ${imported} 題！`;
+    } else if (imported > 0) {
+      bar.className = 'import-result-bar warn';
+      bar.textContent = `⚠️ 匯入 ${imported} 題，略過 ${errors.length} 筆錯誤`;
+    } else {
+      bar.className = 'import-result-bar error';
+      bar.textContent = `❌ 匯入失敗：${errors.join(' / ')}`;
+    }
+    bar.style.display = 'block';
+    document.getElementById('import-submit-btn').disabled = false;
+
+    if (imported > 0) {
+      // 更新 allBanks 題數
+      const b = allBanks.find(x => x.id === bankId);
+      if (b) b.questionCount = questionCount;
+      renderBankList();
+      // 刷新展開的題庫題目
+      if (activeBankId === bankId && socket && conn) {
+        socket.emit('qbank:get_bank', { bankId });
+      }
+      // 2 秒後自動關閉
+      setTimeout(() => closeImportModal(), 2200);
+    }
+  });
+
+  // ── QBank events ──
+  socket.on('qbank:list', banks => {
+    allBanks = banks;
+    renderBankList();
+  });
+  socket.on('qbank:bank_detail', bank => {
+    activeBankId = bank.id;
+    activeBankQuestions = bank.questions || [];
+    renderQList();
+  });
+  socket.on('qbank:bank_created', bank => {
+    toast(`✅ 題庫「${bank.name}」已建立`);
+    closeBankModal();
+  });
+  socket.on('qbank:bank_updated', bank => {
+    toast(`✅ 題庫已更新`);
+    closeBankModal();
+  });
+  socket.on('qbank:bank_deleted', ({ bankId }) => {
+    if(activeBankId===bankId){ activeBankId=null; activeBankQuestions=[]; renderQList(); }
+    pendingBankIds.delete(bankId);
+    toast('🗑️ 題庫已刪除');
+  });
+  socket.on('qbank:question_added', ({ bankId, question, questionCount }) => {
+    if(activeBankId===bankId){
+      activeBankQuestions.push(question);
+      renderQList();
+    }
+    // update count in allBanks
+    const b=allBanks.find(b=>b.id===bankId);
+    if(b) b.questionCount=questionCount;
+    renderBankList();
+    toast('✅ 試題已新增');
+    closeQModal();
+  });
+  socket.on('qbank:question_updated', ({ bankId, question }) => {
+    if(activeBankId===bankId){
+      const idx=activeBankQuestions.findIndex(q=>q.id===question.id);
+      if(idx>=0) activeBankQuestions[idx]=question;
+      renderQList();
+    }
+    toast('✅ 試題已更新');
+    closeQModal();
+  });
+  socket.on('qbank:question_deleted', ({ bankId, questionId, questionCount }) => {
+    if(activeBankId===bankId){
+      activeBankQuestions=activeBankQuestions.filter(q=>q.id!==questionId);
+      renderQList();
+    }
+    const b=allBanks.find(b=>b.id===bankId);
+    if(b) b.questionCount=questionCount;
+    renderBankList();
+    toast('🗑️ 試題已刪除');
+  });
+  socket.on('qbank:room_banks_updated', ({ bankIds, totalQuestions }) => {
+    roomBankIds = new Set(bankIds);
+    pendingBankIds = new Set(bankIds);
+    updateRoomStatus(totalQuestions);
+    renderBankList();
+  });
+  socket.on('qbank:error', ({ msg }) => {
+    toast('⚠️ '+msg);
+  });
+}
+
+// ════════════════════════════════════════════════
+//  CONTROLS
+// ════════════════════════════════════════════════
+function setStatus(cls,lbl){
+  document.getElementById('sdot').className='sdot '+cls;
+  document.getElementById('stxt').textContent=lbl;
+}
+function enableCtrl(on){
+  ['bs','bp','bst','bzs'].forEach(id=>document.getElementById(id).disabled=!on);
+}
+function syncBtns(){
+  const idle=gState==='idle', run=gState==='running', paused=gState==='paused', ended=gState==='ended';
+  document.getElementById('bs').disabled   = !conn||run||paused;
+  document.getElementById('bp').disabled   = !conn||idle||ended;
+  document.getElementById('bst').disabled  = !conn||idle||ended;
+  document.getElementById('bzs').disabled  = !conn||!run;
+  document.getElementById('pause-lbl').textContent = paused?'Resume Game':'Pause / Resume';
+}
+function ctrl(action){ if(!socket||!conn) return; socket.emit('teacher:game_control',{ action, roomId:getRoomId() }); }
+function cfmStop(){ openCfm('End Game?','This will immediately terminate the round.',()=>ctrl('stop')); }
+function doShrink(){ if(!socket||!conn) return; socket.emit('teacher:force_shrink',{ roomId:getRoomId() }); toast('🔴 Zone shrink triggered'); }
+function broadcast(){ const msg=document.getElementById('bc-input').value.trim(); if(!msg||!conn) return; socket.emit('teacher:broadcast',{ roomId:getRoomId(), message:msg }); document.getElementById('bc-input').value=''; }
+function kickPlayer(pid,name){ openCfm(`Kick ${name}?`,`"${name}" will be disconnected immediately.`,()=>{ socket.emit('teacher:kick_player',{ playerId:pid }); toast(`Kicked ${name}`); }); }
+function adjHp(pid,delta){ if(!socket||!conn) return; socket.emit('teacher:adjust_hp',{ playerId:pid, delta, roomId:getRoomId() }); }
+
+// ════════════════════════════════════════════════
+//  PLAYER RENDER
+// ════════════════════════════════════════════════
+function renderAll(){ updateStats(); updateAcc(); renderList(); renderQStats(); renderMap(); }
+function updateStats(){
+  const all=[...players.values()], alive=all.filter(p=>p.isAlive).length;
+  document.getElementById('st-p').textContent=all.length;
+  document.getElementById('st-a').textContent=alive;
+  document.getElementById('st-b').textContent=battles;
+  document.getElementById('st-e').textContent=elim;
+}
+function updateAcc(){
+  const total=gCorrect+gWrong+gTimeout;
+  const pct=total>0?Math.round(gCorrect/total*100):0;
+  document.getElementById('acc-pct').textContent=pct+'%';
+  document.getElementById('acc-fill').style.strokeDashoffset=175.9-(175.9*pct/100);
+  document.getElementById('v-c').textContent=gCorrect;
+  document.getElementById('v-w').textContent=gWrong;
+  document.getElementById('v-t').textContent=gTimeout;
+  const mx=Math.max(gCorrect,gWrong,gTimeout,1);
+  document.getElementById('b-c').style.width=(gCorrect/mx*100)+'%';
+  document.getElementById('b-w').style.width=(gWrong/mx*100)+'%';
+  document.getElementById('b-t').style.width=(gTimeout/mx*100)+'%';
+  const avg=gTimes.length>0?(gTimes.reduce((a,b)=>a+b,0)/gTimes.length/1000).toFixed(1):'--';
+  document.getElementById('v-avg').textContent=avg+'s';
+}
+function renderList(){
+  const list=document.getElementById('plist'), ft=filterText.toLowerCase();
+  const sorted=[...players.values()].sort((a,b)=>{ if(a.isAlive!==b.isAlive) return a.isAlive?-1:1; return (b.wins||0)-(a.wins||0); });
+  list.querySelectorAll('[data-pid]').forEach(el=>{ if(!players.has(el.dataset.pid)) el.remove(); });
+  sorted.forEach((p,i)=>{
+    if(ft&&!p.name.toLowerCase().includes(ft)) return;
+    const ex=list.querySelector(`[data-pid="${p.id}"]`);
+    if(ex) updateRowEl(ex,p,i+1); else list.appendChild(buildRowEl(p,i+1));
+  });
+}
+function renderRow(pid){ const p=players.get(pid); if(!p) return; const el=document.querySelector(`[data-pid="${pid}"]`); if(el) updateRowEl(el,p,parseInt(el.dataset.rank)||1); }
+function buildRowEl(p,rank){
+  const div=document.createElement('div'); div.dataset.pid=p.id; div.dataset.rank=rank;
+  const hue=strHue(p.name), bg=`hsl(${hue},58%,42%)`;
+  div.innerHTML=`<span class="prank">${rank}</span><div class="pavatar" style="background:${bg}">${p.name.charAt(0).toUpperCase()}<div class="bring"></div></div><div class="pinfo"><div class="pname">${esc(p.name)}</div><div class="pstats"><span class="pchip hi">🏆 ${p.wins||0}</span><span class="pchip">HP ${p.hp}/${MAX_HP}</span></div></div><div class="php">${hpips(p.hp)}</div><div class="pacts"><button class="abtn" title="Heal" onclick="adjHp('${p.id}',1)">+</button><button class="abtn" title="Damage" onclick="adjHp('${p.id}',-1)">−</button><button class="abtn kick" title="Kick" onclick="kickPlayer('${p.id}','${esc(p.name)}')">✕</button></div>`;
+  updateRowEl(div,p,rank); return div;
+}
+function updateRowEl(el,p,rank){
+  el.dataset.rank=rank;
+  el.className='prow'+(p.isAlive?'':' dead')+(p.inBattle?' inb':'');
+  const rk=el.querySelector('.prank'); if(rk) rk.textContent=rank;
+  const st=el.querySelector('.pstats'); if(st) st.innerHTML=`<span class="pchip hi">🏆 ${p.wins||0}</span><span class="pchip">HP ${p.hp}/${MAX_HP}</span>`;
+  const hp=el.querySelector('.php'); if(hp) hp.innerHTML=hpips(p.hp);
+}
+function hpips(hp){ let h=''; for(let i=0;i<MAX_HP;i++) h+=`<div class="hpip${i<hp?'':' e'}"></div>`; return h; }
+function renderQStats(){
+  const c=document.getElementById('qrows'); c.innerHTML=''; let idx=1;
+  qStats.forEach((qs,qid)=>{
+    const tot=qs.correct+qs.wrong+qs.timeout;
+    const pct=tot>0?Math.round(qs.correct/tot*100):0;
+    const col=pct>=70?'var(--green)':pct>=40?'var(--amber)':'var(--red)';
+    const row=document.createElement('div'); row.className='qrow';
+    row.innerHTML=`<span class="qid">Q${idx}</span><span class="qtxt" title="${esc(qs.text)}">${esc(qs.text)}</span><div class="qbar"><div class="qfill" style="width:${pct}%;background:${col}"></div></div><span class="qpct" style="color:${col}">${pct}%</span>`;
+    c.appendChild(row); idx++;
+  });
+}
+
+// ════════════════════════════════════════════════
+//  MAP
+// ════════════════════════════════════════════════
+const cv=document.getElementById('map-cv'), ctx=cv.getContext('2d');
+function renderMap(){
+  const W=cv.offsetWidth, H=cv.offsetHeight; if(!W||!H) return;
+  cv.width=W; cv.height=H;
+  const sc=Math.min(W/MAP,H/MAP), ox=(W-MAP*sc)/2, oy=(H-MAP*sc)/2;
+  ctx.fillStyle='#060d05'; ctx.fillRect(0,0,W,H);
+  ctx.strokeStyle='rgba(255,255,255,0.06)'; ctx.lineWidth=1;
+  ctx.strokeRect(ox,oy,MAP*sc,MAP*sc);
+  ctx.strokeStyle='rgba(255,255,255,0.025)'; ctx.lineWidth=0.5;
+  for(let i=0;i<=8;i++){
+    const x=ox+(MAP/8*i)*sc, y=oy+(MAP/8*i)*sc;
+    ctx.beginPath(); ctx.moveTo(x,oy); ctx.lineTo(x,oy+MAP*sc); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(ox,y); ctx.lineTo(ox+MAP*sc,y); ctx.stroke();
+  }
+  const cx=ox+(MAP/2)*sc, cy=oy+(MAP/2)*sc, r=zoneR*sc;
+  ctx.save();
+  ctx.fillStyle='rgba(176,64,255,0.07)'; ctx.fillRect(ox,oy,MAP*sc,MAP*sc);
+  ctx.globalCompositeOperation='destination-out';
+  ctx.beginPath(); ctx.arc(cx,cy,r,0,Math.PI*2); ctx.fill();
+  ctx.restore();
+  ctx.beginPath(); ctx.arc(cx,cy,r,0,Math.PI*2);
+  ctx.strokeStyle='rgba(176,64,255,0.7)'; ctx.lineWidth=1.5;
+  ctx.setLineDash([4,4]); ctx.stroke(); ctx.setLineDash([]);
+  players.forEach(p=>{
+    const px=ox+p.x*sc, py=oy+p.y*sc;
+    ctx.globalAlpha=p.isAlive?1:0.28;
+    if(p.inBattle){ ctx.beginPath(); ctx.arc(px,py,6,0,Math.PI*2); ctx.strokeStyle='rgba(56,189,248,0.6)'; ctx.lineWidth=1; ctx.stroke(); }
+    ctx.beginPath(); ctx.arc(px,py,p.isAlive?4:2.5,0,Math.PI*2);
+    ctx.fillStyle=p.isAlive?`hsl(${strHue(p.name)},65%,58%)`:'rgba(255,255,255,0.4)'; ctx.fill();
+    ctx.globalAlpha=1;
+  });
+}
+new ResizeObserver(renderMap).observe(document.getElementById('map-area'));
+
+// ════════════════════════════════════════════════
+//  QBANK UI
+// ════════════════════════════════════════════════
+const SUBJECT_EMOJI = { '國語':'📖','數學':'🔢','社會':'🌏','自然':'🔬','英語':'🌐','健康':'💪','綜合':'🎨','其他':'📋' };
+const GRADE_LABEL = { '1':'一年','2':'二年','3':'三年','4':'四年','5':'五年','6':'六年' };
+
+function renderBankList(){
+  const el=document.getElementById('qb-bank-list');
+  if(allBanks.length===0){
+    el.innerHTML='<div class="qb-q-empty">尚無題庫，請點「＋ 新增題庫」</div>'; return;
+  }
+  el.innerHTML='';
+  allBanks.forEach(bank=>{
+    const inRoom=roomBankIds.has(bank.id);
+    const pending=pendingBankIds.has(bank.id);
+    const isActive=activeBankId===bank.id;
+    const emoji=SUBJECT_EMOJI[bank.subject]||'📋';
+    const gradeLabel=GRADE_LABEL[bank.grade]||bank.grade;
+    const div=document.createElement('div');
+    div.className='qb-bank-item'+(pending?' in-room':'')+(isActive?' selected':'');
+    div.innerHTML=`
+      <div class="qb-bank-check">${pending?'✓':''}</div>
+      <div class="qb-bank-info" onclick="selectBankForEdit('${bank.id}')">
+        <div class="qb-bank-name">${emoji} ${esc(bank.name)}</div>
+        <div class="qb-bank-meta">${bank.schoolYear}學年 ${gradeLabel} ${esc(bank.subject)} · ${esc(bank.chapter||'')}</div>
+      </div>
+      <span class="qb-bank-count">${bank.questionCount}題</span>
+      <div class="qb-bank-actions">
+        <button class="qb-btn" style="padding:2px 7px;font-size:9px;" onclick="editBank('${bank.id}')">編輯</button>
+        <button class="qb-btn danger" style="padding:2px 7px;font-size:9px;" onclick="deleteBank('${bank.id}','${esc(bank.name)}')">刪除</button>
+      </div>`;
+    // Toggle selection on checkbox / item click
+    div.querySelector('.qb-bank-check').onclick = () => toggleBankPending(bank.id);
+    el.appendChild(div);
+  });
+}
+
+function toggleBankPending(bankId){
+  if(pendingBankIds.has(bankId)) pendingBankIds.delete(bankId);
+  else pendingBankIds.add(bankId);
+  renderBankList();
+  updatePendingStatus();
+}
+
+function updatePendingStatus(){
+  const total = [...pendingBankIds].reduce((s,bid)=>{ const b=allBanks.find(x=>x.id===bid); return s+(b?b.questionCount:0); }, 0);
+  const count = pendingBankIds.size;
+  if(count===0){
+    document.getElementById('qb-room-info').textContent='尚未選取（全題庫隨機）';
+  } else {
+    document.getElementById('qb-room-info').textContent=`已選 ${count} 個題庫・共 ${total} 題`;
+  }
+}
+
+function updateRoomStatus(total){
+  const count=roomBankIds.size;
+  if(count===0) document.getElementById('qb-room-info').textContent='尚未選取（全題庫隨機）';
+  else document.getElementById('qb-room-info').textContent=`${count} 個題庫・共 ${total} 題 ✓已套用`;
+}
+
+function applyRoomBanks(){
+  if(!socket||!conn){ toast('⚠️ 請先連線'); return; }
+  socket.emit('qbank:set_room_banks',{ roomId:getRoomId(), bankIds:[...pendingBankIds] });
+  toast('📚 題庫設定已套用');
+}
+
+function selectBankForEdit(bankId){
+  activeBankId=bankId;
+  if(socket&&conn) socket.emit('qbank:get_bank',{ bankId });
+  renderBankList();
+  document.getElementById('qb-q-empty').style.display='none';
+  document.getElementById('qb-q-header').style.display='block';
+  const bank=allBanks.find(b=>b.id===bankId);
+  if(bank) document.getElementById('qb-q-header-title').textContent=`${bank.name}`;
+}
+
+function renderQList(){
+  const el=document.getElementById('qb-q-list');
+  el.innerHTML='';
+  if(!activeBankId){ return; }
+  if(activeBankQuestions.length===0){
+    el.innerHTML='<div class="qb-q-empty">此題庫尚無試題</div>'; return;
+  }
+  activeBankQuestions.forEach((q,i)=>{
+    const diffLabel = { easy:'簡單', medium:'普通', hard:'困難' }[q.difficulty]||'';
+    const diffCls   = { easy:'diff-easy', medium:'diff-medium', hard:'diff-hard' }[q.difficulty]||'';
+    const optsHtml = q.opts.map(o=>`<span class="qb-q-opt${o.id===q.ans?' ans':''}">${o.id.toUpperCase()}. ${esc(o.text)}</span>`).join('');
+    const tagsHtml = q.tags ? q.tags.split(',').map(t=>`<span class="qb-q-tag">${esc(t.trim())}</span>`).join('') : '';
+    const div=document.createElement('div'); div.className='qb-q-item';
+    div.innerHTML=`
+      <div class="qb-q-row1">
+        <span class="qb-q-num">${i+1}.</span>
+        <span class="qb-q-text">${esc(q.text)} <span class="${diffCls}" style="font-size:10px;font-family:var(--mono);">[${diffLabel}]</span></span>
+        <div class="qb-q-acts">
+          <button class="qb-btn" style="padding:2px 7px;font-size:9px;" onclick="editQ('${q.id}')">編輯</button>
+          <button class="qb-btn danger" style="padding:2px 7px;font-size:9px;" onclick="deleteQ('${q.id}','${esc(q.text.slice(0,20))}')">刪除</button>
+        </div>
+      </div>
+      <div class="qb-q-opts">${optsHtml}</div>
+      ${tagsHtml?`<div class="qb-q-tags">${tagsHtml}</div>`:''}`;
+    el.appendChild(div);
+  });
+}
+
+// ── Bank CRUD ──
+function openBankModal(editId=null){
+  document.getElementById('bank-edit-id').value=editId||'';
+  document.getElementById('bank-modal-title').textContent=editId?'編輯題庫':'新增題庫';
+  if(editId){
+    const b=allBanks.find(x=>x.id===editId);
+    if(b){
+      document.getElementById('bank-name').value=b.name||'';
+      document.getElementById('bank-year').value=b.schoolYear||'113';
+      document.getElementById('bank-grade').value=b.grade||'5';
+      document.getElementById('bank-subject').value=b.subject||'自然';
+      document.getElementById('bank-chapter').value=b.chapter||'';
+      document.getElementById('bank-desc').value=b.description||'';
+    }
+  } else {
+    ['bank-name','bank-chapter','bank-desc'].forEach(id=>document.getElementById(id).value='');
+  }
+  document.getElementById('modal-bank').classList.add('open');
+}
+function closeBankModal(){ document.getElementById('modal-bank').classList.remove('open'); }
+function editBank(id){ openBankModal(id); }
+function submitBankForm(){
+  if(!socket||!conn){ toast('⚠️ 請先連線'); return; }
+  const editId=document.getElementById('bank-edit-id').value;
+  const data={
+    name: document.getElementById('bank-name').value.trim(),
+    schoolYear: document.getElementById('bank-year').value,
+    grade: document.getElementById('bank-grade').value,
+    subject: document.getElementById('bank-subject').value,
+    chapter: document.getElementById('bank-chapter').value.trim(),
+    description: document.getElementById('bank-desc').value.trim(),
+  };
+  if(!data.name){ toast('⚠️ 題庫名稱不可空白'); return; }
+  if(editId) socket.emit('qbank:update_bank',{ bankId:editId, ...data });
+  else socket.emit('qbank:create_bank', data);
+}
+function deleteBank(bankId, name){
+  openCfm(`刪除題庫「${name}」？`,`此題庫內所有試題都將被刪除，無法復原。`,()=>{
+    socket.emit('qbank:delete_bank',{ bankId }); closeCfm();
+  });
+}
+
+// ── Question CRUD ──
+function openQModal(editId=null){
+  if(!activeBankId){ toast('⚠️ 請先選取題庫'); return; }
+  document.getElementById('q-edit-id').value=editId||'';
+  document.getElementById('q-modal-title').textContent=editId?'編輯試題':'新增試題';
+  if(editId){
+    const q=activeBankQuestions.find(x=>x.id===editId);
+    if(q){
+      document.getElementById('q-text').value=q.text||'';
+      ['a','b','c','d'].forEach(l=>{ document.getElementById('opt-'+l).value=q.opts.find(o=>o.id===l)?.text||''; });
+      const r=document.querySelector(`input[name="qans"][value="${q.ans}"]`); if(r) r.checked=true;
+      document.getElementById('q-diff').value=q.difficulty||'medium';
+      document.getElementById('q-tags').value=q.tags||'';
+    }
+  } else {
+    document.getElementById('q-text').value='';
+    ['a','b','c','d'].forEach(l=>document.getElementById('opt-'+l).value='');
+    document.querySelectorAll('input[name="qans"]').forEach(r=>r.checked=false);
+    document.getElementById('q-diff').value='medium';
+    document.getElementById('q-tags').value='';
+  }
+  document.getElementById('modal-q').classList.add('open');
+}
+function closeQModal(){ document.getElementById('modal-q').classList.remove('open'); }
+function editQ(qid){ openQModal(qid); }
+function submitQForm(){
+  if(!socket||!conn){ toast('⚠️ 請先連線'); return; }
+  const editId=document.getElementById('q-edit-id').value;
+  const text=document.getElementById('q-text').value.trim();
+  const opts=[
+    { id:'a', text:document.getElementById('opt-a').value.trim() },
+    { id:'b', text:document.getElementById('opt-b').value.trim() },
+    { id:'c', text:document.getElementById('opt-c').value.trim() },
+    { id:'d', text:document.getElementById('opt-d').value.trim() },
+  ].filter(o=>o.text);
+  const ansEl=document.querySelector('input[name="qans"]:checked');
+  if(!text){ toast('⚠️ 請填寫題目'); return; }
+  if(opts.length<2){ toast('⚠️ 至少需要 2 個選項'); return; }
+  if(!ansEl){ toast('⚠️ 請選擇正確答案'); return; }
+  const ans=ansEl.value;
+  if(!opts.find(o=>o.id===ans)){ toast('⚠️ 正確答案對應的選項不可空白'); return; }
+  const data={ bankId:activeBankId, text, opts, ans, difficulty:document.getElementById('q-diff').value, tags:document.getElementById('q-tags').value.trim() };
+  if(editId) socket.emit('qbank:update_question',{ ...data, questionId:editId });
+  else socket.emit('qbank:add_question', data);
+}
+function deleteQ(qid, preview){
+  openCfm(`刪除試題？`,`「${preview}…」將被永久刪除。`,()=>{
+    socket.emit('qbank:delete_question',{ bankId:activeBankId, questionId:qid }); closeCfm();
+  });
+}
+
+// ════════════════════════════════════════════════
+//  LOG / CONFIRM / TOAST / UTILS
+// ════════════════════════════════════════════════
+function log(type,html){
+  const el=document.getElementById('log');
+  const now=new Date().toTimeString().slice(3,8);
+  const map={battle:['BATTLE','lb-battle'],elim:['ELIM','lb-elim'],zone:['ZONE','lb-zone'],sys:['SYS','lb-sys'],win:['WIN','lb-win']};
+  const [lbl,cls]=map[type]||['INFO','lb-sys'];
+  const row=document.createElement('div'); row.className='lrow';
+  row.innerHTML=`<span class="lt">${now}</span><span class="lb ${cls}">${lbl}</span><span class="lx">${html}</span>`;
+  el.appendChild(row);
+  while(el.children.length>200) el.removeChild(el.firstChild);
+  el.scrollTop=el.scrollHeight;
+}
+function clearLog(){ document.getElementById('log').innerHTML=''; }
+function filterP(v){ filterText=v; renderList(); }
+function openCfm(t,b,cb){
+  document.getElementById('cfm-t').textContent=t;
+  document.getElementById('cfm-b').textContent=b;
+  document.getElementById('cfm').classList.add('open'); cfmCb=cb;
+  document.getElementById('cfm-y').onclick=()=>{ if(cfmCb) cfmCb(); closeCfm(); };
+}
+function closeCfm(){ document.getElementById('cfm').classList.remove('open'); cfmCb=null; }
+function toast(msg){ const c=document.getElementById('toast-c'); const t=document.createElement('div'); t.className='toast'; t.textContent=msg; c.appendChild(t); setTimeout(()=>t.remove(),3200); }
+function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function strHue(s){ let h=0; for(const c of s) h=c.charCodeAt(0)+((h<<5)-h); return((h%360)+360)%360; }
+
+document.addEventListener('keydown',e=>{ if(e.key==='Escape'){ closeCfm(); closeBankModal(); closeQModal(); closeImportModal(); } });
+
+// ════════════════════════════════════════════════
+//  IMPORT (CSV / Excel)
+// ════════════════════════════════════════════════
+
+// CSV 格式說明（第一列為標題列，可忽略）：
+//   題目, 選項A, 選項B, 選項C, 選項D, 正確答案(A/B/C/D), 難度(easy/medium/hard), 標籤
+const IMPORT_HEADERS = ['題目','選項A','選項B','選項C','選項D','正確答案','難度','標籤'];
+const TEMPLATE_ROWS  = [
+  ['地球距離太陽約多少公里？','約1億5千萬公里','約3億公里','約5千萬公里','約2億公里','A','medium','地球,太陽'],
+  ['水分子的化學式是什麼？','CO₂','H₂O','O₂','NaCl','B','easy','化學'],
+  ['臺灣最高峰是哪一座山？','雪山','玉山','南湖大山','秀姑巒山','B','easy','地理,台灣'],
+];
+
+let importParsed = [];   // 解析後的題目陣列（含 valid 旗標）
+
+// ── 開關 ──
+function openImportModal() {
+  if (!activeBankId) { toast('⚠️ 請先點選題庫'); return; }
+  importParsed = [];
+  document.getElementById('import-file-input').value = '';
+  document.getElementById('import-preview').style.display = 'none';
+  document.getElementById('import-result-bar').style.display = 'none';
+  document.getElementById('import-submit-btn').disabled = true;
+  document.getElementById('import-submit-count').textContent = '';
+  const bank = allBanks.find(b => b.id === activeBankId);
+  document.getElementById('import-target-name').textContent = bank ? bank.name : activeBankId;
+  document.getElementById('import-drop').classList.remove('over');
+  document.getElementById('modal-import').classList.add('open');
+}
+function closeImportModal() {
+  document.getElementById('modal-import').classList.remove('open');
+}
+
+// ── 拖放 ──
+function handleImportDrop(e) {
+  e.preventDefault();
+  document.getElementById('import-drop').classList.remove('over');
+  const file = e.dataTransfer.files[0];
+  if (file) handleImportFile(file);
+}
+
+// ── 檔案處理入口 ──
+function handleImportFile(file) {
+  if (!file) return;
+  const ext = file.name.split('.').pop().toLowerCase();
+  if (!['csv','xlsx','xls'].includes(ext)) {
+    toast('⚠️ 僅支援 .csv / .xlsx / .xls'); return;
+  }
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      let rows;
+      if (ext === 'csv') {
+        rows = parseCSV(e.target.result);
+      } else {
+        // Excel via SheetJS
+        const wb = XLSX.read(e.target.result, { type: 'binary' });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+      }
+      processImportRows(rows);
+    } catch(err) {
+      toast('⚠️ 檔案解析失敗：' + err.message);
+    }
+  };
+  if (ext === 'csv') reader.readAsText(file, 'UTF-8');
+  else               reader.readAsBinaryString(file);
+}
+
+// ── CSV 解析（支援引號跳脫）──
+function parseCSV(text) {
+  const lines = text.replace(/\r\n/g,'\n').replace(/\r/g,'\n').split('\n');
+  return lines.map(line => {
+    const cells = [];
+    let cur = '', inQ = false;
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i];
+      if (ch === '"') {
+        if (inQ && line[i+1] === '"') { cur += '"'; i++; }
+        else inQ = !inQ;
+      } else if (ch === ',' && !inQ) {
+        cells.push(cur.trim()); cur = '';
+      } else {
+        cur += ch;
+      }
+    }
+    cells.push(cur.trim());
+    return cells;
+  }).filter(r => r.some(c => c !== ''));
+}
+
+// ── 資料列處理 & 驗證 ──
+function processImportRows(rows) {
+  if (rows.length === 0) { toast('⚠️ 檔案無資料'); return; }
+
+  // 自動偵測並跳過標題列（第一列若含「題目」「選項」「答案」等關鍵字）
+  let startRow = 0;
+  const firstRow = rows[0].join('').toLowerCase();
+  if (firstRow.includes('題目') || firstRow.includes('選項') || firstRow.includes('答案')) startRow = 1;
+
+  const DIFF_MAP = {
+    '簡單':'easy', 'easy':'easy', '1':'easy',
+    '普通':'medium', '中等':'medium', 'medium':'medium', '2':'medium',
+    '困難':'hard', 'hard':'hard', '3':'hard',
+  };
+  const ANS_MAP = { 'a':'a','b':'b','c':'c','d':'d','1':'a','2':'b','3':'c','4':'d','A':'a','B':'b','C':'c','D':'d' };
+
+  importParsed = [];
+  for (let i = startRow; i < rows.length; i++) {
+    const r = rows[i];
+    const text = (r[0]||'').trim();
+    const optA = (r[1]||'').trim();
+    const optB = (r[2]||'').trim();
+    const optC = (r[3]||'').trim();
+    const optD = (r[4]||'').trim();
+    const ansRaw = (r[5]||'').trim();
+    const diff   = (r[6]||'').trim();
+    const tags   = (r[7]||'').trim();
+
+    const errors = [];
+    if (!text)  errors.push('題目為空');
+    const opts = [
+      { id:'a', text:optA }, { id:'b', text:optB },
+      { id:'c', text:optC }, { id:'d', text:optD },
+    ].filter(o => o.text);
+    if (opts.length < 2) errors.push('非空選項少於 2 個');
+
+    const ans = ANS_MAP[ansRaw] || ANS_MAP[ansRaw?.toUpperCase()] || '';
+    if (!ans)                    errors.push(`正確答案「${ansRaw}」無效（請填 A/B/C/D）`);
+    if (ans && !opts.find(o => o.id === ans)) errors.push(`答案「${ansRaw.toUpperCase()}」對應的選項為空`);
+
+    const difficulty = DIFF_MAP[diff] || DIFF_MAP[diff?.toLowerCase()] || 'medium';
+
+    importParsed.push({
+      rowNum: i - startRow + 1,
+      text, opts, ans, difficulty, tags,
+      optA, optB, optC, optD, ansRaw,
+      errors, valid: errors.length === 0,
+    });
+  }
+
+  renderImportPreview();
+}
+
+// ── 預覽渲染 ──
+function renderImportPreview() {
+  const okList  = importParsed.filter(r => r.valid);
+  const errList = importParsed.filter(r => !r.valid);
+
+  document.getElementById('import-ok-count').textContent  = okList.length  + ' 筆正常';
+  document.getElementById('import-err-count').textContent = errList.length ? errList.length + ' 筆錯誤' : '';
+
+  const tbody = document.getElementById('import-preview-body');
+  tbody.innerHTML = '';
+  const DIFF_LABEL = { easy:'簡單', medium:'普通', hard:'困難' };
+
+  importParsed.forEach(q => {
+    const tr = document.createElement('tr');
+    tr.className = q.valid ? 'row-ok' : 'row-err';
+    tr.innerHTML = `
+      <td style="color:var(--dim);font-family:var(--mono)">${q.rowNum}</td>
+      <td style="max-width:180px;white-space:normal">${esc(q.text||'─')}</td>
+      <td>${esc(q.optA||'─')}</td>
+      <td>${esc(q.optB||'─')}</td>
+      <td>${esc(q.optC||'─')}</td>
+      <td>${esc(q.optD||'─')}</td>
+      <td>${q.ans ? '<span class="ans-badge">'+q.ans.toUpperCase()+'</span>' : '<span style="color:var(--red)">?</span>'}</td>
+      <td><span class="diff-badge ${q.difficulty||'medium'}">${DIFF_LABEL[q.difficulty]||'普通'}</span></td>
+      <td style="font-size:9px;color:var(--dim)">${esc(q.tags||'')}</td>
+      <td>${q.valid
+        ? '<span style="color:var(--green);font-size:12px">✓</span>'
+        : '<span style="color:var(--red);font-size:12px">✗</span>' + q.errors.map(e=>`<div class="import-err-msg">${esc(e)}</div>`).join('')
+      }</td>`;
+    tbody.appendChild(tr);
+  });
+
+  document.getElementById('import-preview').style.display = 'block';
+  document.getElementById('import-result-bar').style.display = 'none';
+
+  const submitBtn = document.getElementById('import-submit-btn');
+  if (okList.length > 0) {
+    submitBtn.disabled = false;
+    document.getElementById('import-submit-count').textContent =
+      `(${okList.length} 題${errList.length ? `，略過 ${errList.length} 筆錯誤` : ''})`;
+  } else {
+    submitBtn.disabled = true;
+    document.getElementById('import-submit-count').textContent = '';
+  }
+}
+
+// ── 送出 ──
+function submitImport() {
+  if (!socket || !conn) { toast('⚠️ 請先連線'); return; }
+  if (!activeBankId)    { toast('⚠️ 請先選取題庫'); return; }
+
+  const validQs = importParsed.filter(r => r.valid).map(r => ({
+    text: r.text, opts: r.opts, ans: r.ans,
+    difficulty: r.difficulty, tags: r.tags,
+  }));
+  if (validQs.length === 0) { toast('⚠️ 無有效試題'); return; }
+
+  document.getElementById('import-submit-btn').disabled = true;
+  socket.emit('qbank:import_questions', { bankId: activeBankId, questions: validQs });
+}
+
+// ── 接收結果 ── (在 connect() 內部)
+// 請見 socket.on('qbank:import_result', ...) in connect()
+
+// ── 範本下載 ──
+function downloadTemplate(type) {
+  if (type === 'csv') {
+    const rows = [IMPORT_HEADERS, ...TEMPLATE_ROWS];
+    const csv  = rows.map(r => r.map(c => `"${c}"`).join(',')).join('\r\n');
+    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' }); // BOM for Excel
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a'); a.href = url; a.download = 'qbank_template.csv'; a.click();
+    URL.revokeObjectURL(url);
+  } else {
+    if (typeof XLSX === 'undefined') { toast('⚠️ SheetJS 尚未載入'); return; }
+    const ws = XLSX.utils.aoa_to_sheet([IMPORT_HEADERS, ...TEMPLATE_ROWS]);
+    // 設定欄寬
+    ws['!cols'] = [30,18,18,18,18,10,10,16].map(w => ({ wch: w }));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, '試題');
+    XLSX.writeFile(wb, 'qbank_template.xlsx');
+  }
+}
+renderMap();
+</script>
+</body>
+</html>

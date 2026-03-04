@@ -1,0 +1,1155 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>地圖編輯器 · BrainRoyale</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Share+Tech+Mono&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg:     #080b0f;
+  --bg1:    #0d1117;
+  --bg2:    #111820;
+  --bg3:    #161e29;
+  --border: rgba(255,255,255,0.06);
+  --borderL:rgba(255,255,255,0.13);
+  --amber:  #f0a500;
+  --amberD: rgba(240,165,0,0.14);
+  --green:  #22c55e;
+  --greenD: rgba(34,197,94,0.12);
+  --red:    #ef4444;
+  --redD:   rgba(239,68,68,0.12);
+  --blue:   #38bdf8;
+  --blueD:  rgba(56,189,248,0.10);
+  --purple: #b040ff;
+  --purpleD:rgba(176,64,255,0.14);
+  --cyan:   #06b6d4;
+  --text:   #e2e8f0;
+  --muted:  #64748b;
+  --dim:    #334155;
+  --mono:   'Share Tech Mono', monospace;
+  --sans:   'DM Sans', sans-serif;
+  --disp:   'Bebas Neue', sans-serif;
+  --r:      6px;
+  --t:      0.15s ease;
+}
+
+/* ── Reset ── */
+*, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
+html, body { height:100%; background:var(--bg); color:var(--text); font-family:var(--sans); overflow:hidden; }
+
+/* ── Layout ── */
+#app { display:grid; grid-template-rows:48px 1fr; grid-template-columns:240px 1fr 220px; height:100vh; }
+
+/* ── Topbar ── */
+#topbar {
+  grid-column: 1 / -1;
+  display: flex; align-items: center; gap:12px;
+  padding: 0 16px;
+  background: var(--bg1);
+  border-bottom: 1px solid var(--borderL);
+}
+#topbar .logo { font-family:var(--disp); font-size:22px; color:var(--amber); letter-spacing:2px; margin-right:8px; }
+#topbar .sep  { width:1px; height:24px; background:var(--border); }
+#map-name-input {
+  font-family:var(--mono); font-size:13px; color:var(--text);
+  background:var(--bg2); border:1px solid var(--borderL);
+  border-radius:var(--r); padding:4px 10px; width:200px;
+  outline:none; transition:border var(--t);
+}
+#map-name-input:focus { border-color:var(--amber); }
+.top-btn {
+  font-family:var(--mono); font-size:11px; letter-spacing:.5px;
+  padding:5px 12px; border-radius:var(--r); border:1px solid var(--borderL);
+  cursor:pointer; transition:all var(--t); background:var(--bg2); color:var(--muted);
+}
+.top-btn:hover { color:var(--text); border-color:var(--borderL); background:var(--bg3); }
+.top-btn.primary  { background:var(--amberD); border-color:var(--amber); color:var(--amber); }
+.top-btn.primary:hover { background:rgba(240,165,0,0.25); }
+.top-btn.success  { background:var(--greenD); border-color:var(--green); color:var(--green); }
+.top-btn.success:hover { background:rgba(34,197,94,0.22); }
+.top-btn.danger   { background:var(--redD); border-color:var(--red); color:var(--red); }
+.top-btn.danger:hover { background:rgba(239,68,68,0.22); }
+#topbar .spacer { flex:1; }
+#status-msg { font-family:var(--mono); font-size:10px; color:var(--muted); }
+
+/* ── Left Panel: Tools ── */
+#panel-left {
+  background:var(--bg1); border-right:1px solid var(--border);
+  display:flex; flex-direction:column; gap:0; overflow-y:auto;
+}
+.panel-section { padding:12px; border-bottom:1px solid var(--border); }
+.panel-title {
+  font-family:var(--mono); font-size:9px; letter-spacing:2px;
+  color:var(--muted); text-transform:uppercase; margin-bottom:10px;
+}
+
+/* Tool buttons */
+.tool-grid { display:grid; grid-template-columns:1fr 1fr; gap:6px; }
+.tool-btn {
+  display:flex; flex-direction:column; align-items:center; justify-content:center;
+  gap:4px; padding:10px 6px; border-radius:var(--r);
+  border:1px solid var(--border); background:var(--bg2);
+  cursor:pointer; transition:all var(--t); font-family:var(--mono);
+  font-size:9px; color:var(--muted); letter-spacing:.3px;
+}
+.tool-btn .icon { font-size:18px; line-height:1; }
+.tool-btn:hover { border-color:var(--borderL); color:var(--text); background:var(--bg3); }
+.tool-btn.active { border-color:var(--amber); color:var(--amber); background:var(--amberD); }
+.tool-btn.tool-wall.active    { border-color:#94a3b8; color:#94a3b8; background:rgba(148,163,184,0.12); }
+.tool-btn.tool-spawn.active   { border-color:var(--green); color:var(--green); background:var(--greenD); }
+.tool-btn.tool-portal.active  { border-color:var(--purple); color:var(--purple); background:var(--purpleD); }
+.tool-btn.tool-zone.active    { border-color:var(--blue); color:var(--blue); background:var(--blueD); }
+.tool-btn.tool-erase.active   { border-color:var(--red); color:var(--red); background:var(--redD); }
+
+/* Size control */
+.size-row { display:flex; align-items:center; gap:8px; }
+.size-label { font-family:var(--mono); font-size:10px; color:var(--muted); flex:1; }
+.size-val   { font-family:var(--mono); font-size:12px; color:var(--amber); width:30px; text-align:right; }
+input[type=range] {
+  -webkit-appearance:none; height:3px; border-radius:2px;
+  background:var(--bg3); outline:none; cursor:pointer; flex:1;
+}
+input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance:none; width:12px; height:12px;
+  border-radius:50%; background:var(--amber); cursor:pointer;
+}
+
+/* Legend */
+.legend { display:flex; flex-direction:column; gap:6px; }
+.legend-row { display:flex; align-items:center; gap:8px; font-family:var(--mono); font-size:10px; color:var(--muted); }
+.legend-dot { width:14px; height:14px; border-radius:3px; flex-shrink:0; }
+
+/* ── Canvas area ── */
+#canvas-wrap {
+  position:relative; overflow:hidden; background:var(--bg);
+  background-image: radial-gradient(circle at 50% 50%, rgba(240,165,0,0.03) 0%, transparent 70%);
+}
+#canvas-wrap canvas { position:absolute; top:0; left:0; cursor:crosshair; }
+#coord-display {
+  position:absolute; bottom:10px; left:50%; transform:translateX(-50%);
+  font-family:var(--mono); font-size:10px; color:var(--muted);
+  background:rgba(8,11,15,0.8); padding:3px 10px; border-radius:20px;
+  border:1px solid var(--border); pointer-events:none;
+}
+
+/* ── Right Panel: Properties ── */
+#panel-right {
+  background:var(--bg1); border-left:1px solid var(--border);
+  display:flex; flex-direction:column; gap:0; overflow-y:auto;
+}
+
+/* Form elements */
+.prop-row { display:flex; flex-direction:column; gap:5px; margin-bottom:12px; }
+.prop-label { font-family:var(--mono); font-size:9px; color:var(--muted); letter-spacing:1px; }
+.prop-input {
+  font-family:var(--mono); font-size:12px; color:var(--text);
+  background:var(--bg2); border:1px solid var(--borderL);
+  border-radius:var(--r); padding:5px 8px; outline:none;
+  transition:border var(--t); width:100%;
+}
+.prop-input:focus { border-color:var(--amber); }
+.prop-select {
+  font-family:var(--mono); font-size:11px; color:var(--text);
+  background:var(--bg2); border:1px solid var(--borderL);
+  border-radius:var(--r); padding:5px 8px; outline:none; width:100%;
+  cursor:pointer;
+}
+.prop-select:focus { border-color:var(--amber); }
+.prop-checkbox-row {
+  display:flex; align-items:center; gap:8px;
+  font-family:var(--mono); font-size:11px; color:var(--text);
+  cursor:pointer; padding:6px 0;
+}
+.prop-checkbox-row input[type=checkbox] { accent-color:var(--amber); width:14px; height:14px; }
+
+/* Zone stages table */
+.zone-table { width:100%; border-collapse:collapse; font-family:var(--mono); font-size:10px; }
+.zone-table th { color:var(--muted); font-size:9px; letter-spacing:1px; padding:4px 0; text-align:left; border-bottom:1px solid var(--border); }
+.zone-table td { padding:4px 0; vertical-align:middle; }
+.zone-table input { background:var(--bg2); border:1px solid var(--border); border-radius:3px; padding:2px 5px; color:var(--text); font-family:var(--mono); font-size:10px; width:52px; }
+.zone-table input:focus { outline:none; border-color:var(--amber); }
+.add-stage-btn {
+  font-family:var(--mono); font-size:10px; color:var(--blue);
+  background:none; border:1px dashed rgba(56,189,248,0.3); border-radius:var(--r);
+  padding:4px 8px; cursor:pointer; width:100%; margin-top:6px;
+  transition:all var(--t);
+}
+.add-stage-btn:hover { background:var(--blueD); border-color:var(--blue); }
+
+/* Portal list */
+.portal-list { display:flex; flex-direction:column; gap:6px; }
+.portal-item {
+  background:var(--bg2); border:1px solid var(--border); border-radius:var(--r);
+  padding:8px; font-family:var(--mono); font-size:10px; color:var(--muted);
+  display:flex; flex-direction:column; gap:4px;
+  position:relative;
+}
+.portal-item .pi-head { display:flex; align-items:center; justify-content:space-between; }
+.portal-item .pi-coord { color:var(--purple); }
+.portal-item .pi-del { color:var(--red); cursor:pointer; font-size:12px; background:none; border:none; }
+.portal-item .pi-del:hover { color:#ff6b6b; }
+
+/* Map list */
+.map-list { display:flex; flex-direction:column; gap:4px; }
+.map-item {
+  background:var(--bg2); border:1px solid var(--border); border-radius:var(--r);
+  padding:8px 10px; font-family:var(--mono); font-size:11px;
+  display:flex; align-items:center; justify-content:space-between;
+  cursor:pointer; transition:all var(--t);
+}
+.map-item:hover { border-color:var(--borderL); background:var(--bg3); }
+.map-item.active { border-color:var(--amber); background:var(--amberD); color:var(--amber); }
+.map-item .mi-name { flex:1; }
+.map-item .mi-badge {
+  font-size:9px; padding:1px 5px; border-radius:3px;
+  background:rgba(56,189,248,0.15); color:var(--blue);
+}
+.map-item .mi-badge.main { background:rgba(240,165,0,0.15); color:var(--amber); }
+.map-del { color:var(--dim); cursor:pointer; font-size:14px; background:none; border:none; margin-left:6px; }
+.map-del:hover { color:var(--red); }
+
+/* Toast */
+#toast {
+  position:fixed; bottom:24px; right:24px; z-index:999;
+  font-family:var(--mono); font-size:11px;
+  padding:8px 16px; border-radius:var(--r);
+  background:var(--bg2); border:1px solid var(--borderL);
+  color:var(--text); opacity:0; transform:translateY(8px);
+  transition:all 0.2s ease; pointer-events:none;
+}
+#toast.show { opacity:1; transform:translateY(0); }
+#toast.ok   { border-color:var(--green); color:var(--green); background:var(--greenD); }
+#toast.err  { border-color:var(--red);   color:var(--red);   background:var(--redD);   }
+
+/* Modal */
+.modal-bg {
+  position:fixed; inset:0; background:rgba(0,0,0,0.7);
+  display:flex; align-items:center; justify-content:center;
+  z-index:100; opacity:0; pointer-events:none; transition:opacity 0.2s;
+}
+.modal-bg.open { opacity:1; pointer-events:all; }
+.modal {
+  background:var(--bg1); border:1px solid var(--borderL);
+  border-radius:10px; padding:20px; min-width:340px;
+  display:flex; flex-direction:column; gap:14px;
+}
+.modal-title { font-family:var(--disp); font-size:20px; color:var(--amber); letter-spacing:2px; }
+.modal-foot  { display:flex; gap:8px; justify-content:flex-end; margin-top:4px; }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <!-- ══ TOPBAR ══ -->
+  <div id="topbar">
+    <span class="logo">MAP EDITOR</span>
+    <div class="sep"></div>
+    <input id="map-name-input" type="text" placeholder="地圖名稱..." value="新地圖">
+    <button class="top-btn" onclick="newMap()">✦ 新增</button>
+    <button class="top-btn" onclick="loadMapList()">⟳ 載入清單</button>
+    <div class="sep"></div>
+    <button class="top-btn primary" onclick="saveMap()">⬆ 儲存</button>
+    <button class="top-btn success" onclick="exportJSON()">⬇ 匯出 JSON</button>
+    <button class="top-btn" onclick="importJSON()">⬆ 匯入 JSON</button>
+    <input type="file" id="import-file" accept=".json" style="display:none" onchange="handleImportFile(this)">
+    <div class="sep"></div>
+    <button class="top-btn" onclick="clearAll()">🗑 清除</button>
+    <div class="spacer"></div>
+    <span id="status-msg">準備就緒</span>
+  </div>
+
+  <!-- ══ LEFT PANEL ══ -->
+  <div id="panel-left">
+
+    <!-- Tools -->
+    <div class="panel-section">
+      <div class="panel-title">工具</div>
+      <div class="tool-grid">
+        <div class="tool-btn tool-wall active" id="tool-wall" onclick="setTool('wall')">
+          <span class="icon">🧱</span>WALL
+        </div>
+        <div class="tool-btn tool-erase" id="tool-erase" onclick="setTool('erase')">
+          <span class="icon">🩹</span>ERASE
+        </div>
+        <div class="tool-btn tool-spawn" id="tool-spawn" onclick="setTool('spawn')">
+          <span class="icon">🟢</span>SPAWN
+        </div>
+        <div class="tool-btn tool-portal" id="tool-portal" onclick="setTool('portal')">
+          <span class="icon">🌀</span>PORTAL
+        </div>
+        <div class="tool-btn tool-zone" id="tool-zone" onclick="setTool('zone')">
+          <span class="icon">🎯</span>ZONE CTR
+        </div>
+        <div class="tool-btn" onclick="setTool('pan')">
+          <span class="icon">✋</span>PAN
+        </div>
+      </div>
+    </div>
+
+    <!-- Brush size -->
+    <div class="panel-section">
+      <div class="panel-title">筆刷大小</div>
+      <div class="size-row">
+        <span class="size-label">SIZE</span>
+        <input type="range" id="brush-size" min="1" max="5" value="1"
+               oninput="brushSize=parseInt(this.value); document.getElementById('brush-val').textContent=this.value">
+        <span class="size-val" id="brush-val">1</span>
+      </div>
+    </div>
+
+    <!-- Legend -->
+    <div class="panel-section">
+      <div class="panel-title">圖例</div>
+      <div class="legend">
+        <div class="legend-row">
+          <div class="legend-dot" style="background:#475569"></div>牆壁
+        </div>
+        <div class="legend-row">
+          <div class="legend-dot" style="background:#22c55e"></div>出生點
+        </div>
+        <div class="legend-row">
+          <div class="legend-dot" style="background:#b040ff"></div>傳送門
+        </div>
+        <div class="legend-row">
+          <div class="legend-dot" style="border:2px solid #38bdf8; background:transparent; border-radius:50%"></div>安全區中心
+        </div>
+      </div>
+    </div>
+
+    <!-- Grid settings -->
+    <div class="panel-section">
+      <div class="panel-title">格子設定</div>
+      <div class="size-row" style="margin-bottom:8px">
+        <span class="size-label">格子 px</span>
+        <input type="range" id="tile-size-range" min="20" max="60" value="32"
+               oninput="changeTileSize(parseInt(this.value))">
+        <span class="size-val" id="tile-size-val">32</span>
+      </div>
+      <div class="size-row" style="margin-bottom:8px">
+        <span class="size-label">欄數</span>
+        <input type="range" id="cols-range" min="10" max="80" value="40"
+               oninput="changeGridSize(parseInt(this.value), mapRows)">
+        <span class="size-val" id="cols-val">40</span>
+      </div>
+      <div class="size-row">
+        <span class="size-label">列數</span>
+        <input type="range" id="rows-range" min="10" max="80" value="30"
+               oninput="changeGridSize(mapCols, parseInt(this.value))">
+        <span class="size-val" id="rows-val">30</span>
+      </div>
+    </div>
+
+    <!-- Saved maps -->
+    <div class="panel-section" style="flex:1">
+      <div class="panel-title">已儲存地圖</div>
+      <div class="map-list" id="map-list">
+        <div style="font-family:var(--mono);font-size:10px;color:var(--dim)">按「載入清單」讀取</div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ══ CANVAS ══ -->
+  <div id="canvas-wrap">
+    <canvas id="canvas"></canvas>
+    <div id="coord-display">X: 0  Y: 0  |  格: (0, 0)</div>
+  </div>
+
+  <!-- ══ RIGHT PANEL ══ -->
+  <div id="panel-right">
+
+    <!-- Map properties -->
+    <div class="panel-section">
+      <div class="panel-title">地圖屬性</div>
+      <div class="prop-row">
+        <div class="prop-label">地圖類型</div>
+        <select class="prop-select" id="map-type" onchange="onMapTypeChange()">
+          <option value="room">一般房間（教室/走廊）</option>
+          <option value="main">主戰場 Main Arena</option>
+        </select>
+      </div>
+      <label class="prop-checkbox-row">
+        <input type="checkbox" id="auto-fill-bots" checked>
+        遊戲開始自動補機器人
+      </label>
+    </div>
+
+    <!-- Zone settings -->
+    <div class="panel-section">
+      <div class="panel-title">縮圈設定</div>
+      <div class="prop-row">
+        <div class="prop-label">安全區中心（點地圖設定）</div>
+        <div style="display:flex;gap:6px">
+          <input class="prop-input" id="zone-cx" type="number" placeholder="中心 X" style="width:50%">
+          <input class="prop-input" id="zone-cy" type="number" placeholder="中心 Y" style="width:50%">
+        </div>
+      </div>
+      <div class="prop-label" style="margin-bottom:6px">縮圈階段（秒 / 半徑px）</div>
+      <table class="zone-table">
+        <thead>
+          <tr><th>開始(s)</th><th>半徑(px)</th><th></th></tr>
+        </thead>
+        <tbody id="zone-stages-body"></tbody>
+      </table>
+      <button class="add-stage-btn" onclick="addZoneStage()">＋ 新增階段</button>
+      <div style="margin-top:8px;font-family:var(--mono);font-size:9px;color:var(--dim)">
+        主戰場的縮圈速度建議較慢（at 值較大）
+      </div>
+    </div>
+
+    <!-- Portals -->
+    <div class="panel-section">
+      <div class="panel-title">傳送門清單</div>
+      <div class="portal-list" id="portal-list">
+        <div style="font-family:var(--mono);font-size:10px;color:var(--dim)">在地圖上點選傳送門位置</div>
+      </div>
+    </div>
+
+    <!-- Spawn count -->
+    <div class="panel-section">
+      <div class="panel-title">統計</div>
+      <div style="font-family:var(--mono);font-size:11px;color:var(--muted);display:flex;flex-direction:column;gap:6px">
+        <div>出生點：<span id="stat-spawns" style="color:var(--green)">0</span></div>
+        <div>牆壁格：<span id="stat-walls" style="color:#94a3b8">0</span></div>
+        <div>傳送門：<span id="stat-portals" style="color:var(--purple)">0</span></div>
+        <div>格子大小：<span id="stat-grid" style="color:var(--amber)">40×30</span></div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ══ PORTAL MODAL ══ -->
+<div class="modal-bg" id="modal-portal">
+  <div class="modal">
+    <div class="modal-title">設定傳送門</div>
+    <div class="prop-row">
+      <div class="prop-label">傳送門位置</div>
+      <div style="font-family:var(--mono);font-size:12px;color:var(--purple)" id="portal-pos-display">格 (0, 0)</div>
+    </div>
+    <div class="prop-row">
+      <div class="prop-label">目標地圖</div>
+      <select class="prop-select" id="portal-target-map">
+        <option value="">（未設定）</option>
+      </select>
+    </div>
+    <div class="prop-row">
+      <div class="prop-label">顯示標籤</div>
+      <input class="prop-input" id="portal-label" type="text" placeholder="例：→ 走廊、→ 主戰場">
+    </div>
+    <div class="prop-row">
+      <div class="prop-label">抵達座標（px，留空使用目標地圖出生點）</div>
+      <div style="display:flex;gap:6px">
+        <input class="prop-input" id="portal-arrive-x" type="number" placeholder="抵達 X" style="width:50%">
+        <input class="prop-input" id="portal-arrive-y" type="number" placeholder="抵達 Y" style="width:50%">
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="top-btn" onclick="closePortalModal()">取消</button>
+      <button class="top-btn primary" onclick="confirmPortal()">確認</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+// ════════════════════════════════════════════════
+//  STATE
+// ════════════════════════════════════════════════
+let mapCols   = 40;
+let mapRows   = 30;
+let tileSize  = 32;
+let tool      = 'wall';
+let brushSize = 1;
+let painting  = false;
+let paintMode = null; // 'add' | 'remove'
+
+// Map data
+let walls   = new Set();   // 'x,y'
+let spawns  = new Set();   // 'x,y'
+let portals = [];          // [{gx,gy,targetMapId,targetMapName,label,arriveX,arriveY}]
+let zoneCenter = null;     // {gx,gy}
+
+// Zone stages
+let zoneStages = [
+  { at:0,   radius:800 },
+  { at:60,  radius:600 },
+  { at:120, radius:400 },
+  { at:180, radius:200 },
+  { at:240, radius:80  },
+];
+
+// View transform
+let viewX = 0, viewY = 0, viewScale = 1;
+let isPanning = false, panStartX = 0, panStartY = 0;
+
+// Canvas
+const wrap   = document.getElementById('canvas-wrap');
+const canvas = document.getElementById('canvas');
+const ctx    = canvas.getContext('2d');
+
+// Server state
+let currentMapId = null;
+let allMaps      = [];
+
+// Portal modal state
+let pendingPortalGx = null, pendingPortalGy = null;
+
+// ════════════════════════════════════════════════
+//  CANVAS SETUP
+// ════════════════════════════════════════════════
+function resizeCanvas() {
+  canvas.width  = wrap.clientWidth;
+  canvas.height = wrap.clientHeight;
+  // Center the grid on first load
+  if (viewX === 0 && viewY === 0) centerView();
+  draw();
+}
+
+function centerView() {
+  const gridPxW = mapCols * tileSize;
+  const gridPxH = mapRows * tileSize;
+  viewX = (wrap.clientWidth  - gridPxW) / 2;
+  viewY = (wrap.clientHeight - gridPxH) / 2;
+}
+
+window.addEventListener('resize', resizeCanvas);
+resizeCanvas();
+
+// Default zone stages render
+renderZoneStages();
+
+// ════════════════════════════════════════════════
+//  DRAW
+// ════════════════════════════════════════════════
+function draw() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.save();
+  ctx.translate(viewX, viewY);
+  ctx.scale(viewScale, viewScale);
+
+  const ts = tileSize;
+  const gw = mapCols * ts;
+  const gh = mapRows * ts;
+
+  // Background
+  ctx.fillStyle = '#0a0f14';
+  ctx.fillRect(0, 0, gw, gh);
+
+  // Grid lines
+  ctx.strokeStyle = 'rgba(255,255,255,0.04)';
+  ctx.lineWidth = 0.5;
+  for (let x = 0; x <= mapCols; x++) {
+    ctx.beginPath(); ctx.moveTo(x*ts, 0); ctx.lineTo(x*ts, gh); ctx.stroke();
+  }
+  for (let y = 0; y <= mapRows; y++) {
+    ctx.beginPath(); ctx.moveTo(0, y*ts); ctx.lineTo(gw, y*ts); ctx.stroke();
+  }
+
+  // Zone circle preview
+  if (zoneCenter) {
+    const px = (zoneCenter.gx + 0.5) * ts;
+    const py = (zoneCenter.gy + 0.5) * ts;
+    // Largest radius
+    const r = zoneStages[0]?.radius || 400;
+    ctx.beginPath();
+    ctx.arc(px, py, r, 0, Math.PI*2);
+    ctx.strokeStyle = 'rgba(56,189,248,0.15)';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    ctx.fillStyle = 'rgba(56,189,248,0.03)';
+    ctx.fill();
+    // Center dot
+    ctx.beginPath(); ctx.arc(px, py, 5, 0, Math.PI*2);
+    ctx.fillStyle = '#38bdf8'; ctx.fill();
+    ctx.strokeStyle = 'rgba(56,189,248,0.4)'; ctx.lineWidth = 8;
+    ctx.beginPath(); ctx.arc(px, py, 8, 0, Math.PI*2); ctx.stroke();
+  }
+
+  // Walls
+  ctx.fillStyle = '#3d4f5c';
+  walls.forEach(key => {
+    const [gx, gy] = key.split(',').map(Number);
+    ctx.fillRect(gx*ts+0.5, gy*ts+0.5, ts-1, ts-1);
+    // Top-edge highlight
+    ctx.fillStyle = 'rgba(255,255,255,0.06)';
+    ctx.fillRect(gx*ts+1, gy*ts+1, ts-2, 3);
+    ctx.fillStyle = '#3d4f5c';
+  });
+
+  // Spawns
+  spawns.forEach(key => {
+    const [gx, gy] = key.split(',').map(Number);
+    const cx = (gx+0.5)*ts, cy = (gy+0.5)*ts;
+    ctx.fillStyle = 'rgba(34,197,94,0.2)';
+    ctx.fillRect(gx*ts+1, gy*ts+1, ts-2, ts-2);
+    ctx.beginPath(); ctx.arc(cx, cy, ts*0.28, 0, Math.PI*2);
+    ctx.fillStyle = '#22c55e'; ctx.fill();
+    ctx.strokeStyle = 'rgba(34,197,94,0.5)'; ctx.lineWidth = 1.5;
+    ctx.stroke();
+  });
+
+  // Portals
+  portals.forEach((p, i) => {
+    const cx = (p.gx+0.5)*ts, cy = (p.gy+0.5)*ts;
+    // Glow bg
+    const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, ts*0.6);
+    grad.addColorStop(0, 'rgba(176,64,255,0.35)');
+    grad.addColorStop(1, 'rgba(176,64,255,0)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(p.gx*ts, p.gy*ts, ts, ts);
+    // Spiral icon
+    ctx.beginPath(); ctx.arc(cx, cy, ts*0.3, 0, Math.PI*2);
+    ctx.strokeStyle = '#b040ff'; ctx.lineWidth = 2; ctx.stroke();
+    ctx.fillStyle = 'rgba(176,64,255,0.2)'; ctx.fill();
+    // Index label
+    ctx.fillStyle = '#b040ff';
+    ctx.font = `bold ${ts*0.3}px var(--mono)`;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(i+1, cx, cy);
+    // Portal label
+    if (p.label) {
+      ctx.fillStyle = 'rgba(176,64,255,0.8)';
+      ctx.font = `${Math.max(8, ts*0.22)}px var(--mono)`;
+      ctx.fillText(p.label, cx, cy + ts*0.5 + 2);
+    }
+  });
+
+  // Map border
+  ctx.strokeStyle = 'rgba(240,165,0,0.25)';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(0, 0, gw, gh);
+
+  ctx.restore();
+}
+
+// ════════════════════════════════════════════════
+//  TOOL SYSTEM
+// ════════════════════════════════════════════════
+function setTool(t) {
+  tool = t;
+  document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active'));
+  const map = { wall:'tool-wall', erase:'tool-erase', spawn:'tool-spawn',
+                portal:'tool-portal', zone:'tool-zone', pan:'tool-pan' };
+  const el = document.getElementById('tool-' + t);
+  if (el) el.classList.add('active');
+  canvas.style.cursor = t === 'pan' ? 'grab' : 'crosshair';
+}
+
+// ════════════════════════════════════════════════
+//  COORDINATE HELPERS
+// ════════════════════════════════════════════════
+function screenToGrid(sx, sy) {
+  const wx = (sx - viewX) / viewScale;
+  const wy = (sy - viewY) / viewScale;
+  return { gx: Math.floor(wx / tileSize), gy: Math.floor(wy / tileSize) };
+}
+
+function screenToWorld(sx, sy) {
+  return { wx: (sx - viewX) / viewScale, wy: (sy - viewY) / viewScale };
+}
+
+// ════════════════════════════════════════════════
+//  PAINT
+// ════════════════════════════════════════════════
+function paintAt(gx, gy) {
+  for (let dy = 0; dy < brushSize; dy++) {
+    for (let dx = 0; dx < brushSize; dx++) {
+      const x = gx + dx, y = gy + dy;
+      if (x < 0 || x >= mapCols || y < 0 || y >= mapRows) continue;
+      const key = `${x},${y}`;
+
+      if (tool === 'erase') {
+        walls.delete(key); spawns.delete(key);
+        portals = portals.filter(p => !(p.gx===x && p.gy===y));
+        if (zoneCenter?.gx===x && zoneCenter?.gy===y) zoneCenter = null;
+      } else if (tool === 'wall') {
+        if (paintMode === 'add')    walls.add(key);
+        if (paintMode === 'remove') walls.delete(key);
+        spawns.delete(key);
+      } else if (tool === 'spawn') {
+        if (paintMode === 'add')    { spawns.add(key); walls.delete(key); }
+        if (paintMode === 'remove') spawns.delete(key);
+      }
+    }
+  }
+  updateStats();
+  draw();
+}
+
+// ════════════════════════════════════════════════
+//  MOUSE / TOUCH EVENTS
+// ════════════════════════════════════════════════
+canvas.addEventListener('mousedown', e => {
+  const { gx, gy } = screenToGrid(e.offsetX, e.offsetY);
+
+  if (tool === 'pan' || e.button === 1) {
+    isPanning = true;
+    panStartX = e.offsetX - viewX;
+    panStartY = e.offsetY - viewY;
+    canvas.style.cursor = 'grabbing';
+    return;
+  }
+
+  if (e.button !== 0) return;
+
+  if (tool === 'zone') {
+    if (gx >= 0 && gx < mapCols && gy >= 0 && gy < mapRows) {
+      zoneCenter = { gx, gy };
+      document.getElementById('zone-cx').value = Math.round((gx+0.5) * tileSize);
+      document.getElementById('zone-cy').value = Math.round((gy+0.5) * tileSize);
+      draw();
+    }
+    return;
+  }
+
+  if (tool === 'portal') {
+    if (gx >= 0 && gx < mapCols && gy >= 0 && gy < mapRows) {
+      openPortalModal(gx, gy);
+    }
+    return;
+  }
+
+  painting = true;
+  // Determine add/remove based on current state
+  const key = `${gx},${gy}`;
+  if (tool === 'wall')  paintMode = walls.has(key)  ? 'remove' : 'add';
+  if (tool === 'spawn') paintMode = spawns.has(key) ? 'remove' : 'add';
+  if (tool === 'erase') paintMode = 'add';
+  paintAt(gx, gy);
+});
+
+canvas.addEventListener('mousemove', e => {
+  const { gx, gy } = screenToGrid(e.offsetX, e.offsetY);
+  const { wx, wy } = screenToWorld(e.offsetX, e.offsetY);
+  document.getElementById('coord-display').textContent =
+    `px (${Math.round(wx)}, ${Math.round(wy)})  |  格 (${gx}, ${gy})`;
+
+  if (isPanning) {
+    viewX = e.offsetX - panStartX;
+    viewY = e.offsetY - panStartY;
+    draw(); return;
+  }
+  if (painting) paintAt(gx, gy);
+});
+
+canvas.addEventListener('mouseup',   () => { painting = false; isPanning = false; canvas.style.cursor = tool==='pan'?'grab':'crosshair'; });
+canvas.addEventListener('mouseleave',() => { painting = false; isPanning = false; });
+
+// Wheel zoom
+canvas.addEventListener('wheel', e => {
+  e.preventDefault();
+  const factor = e.deltaY < 0 ? 1.1 : 0.9;
+  const ox = e.offsetX, oy = e.offsetY;
+  viewX = ox - (ox - viewX) * factor;
+  viewY = oy - (oy - viewY) * factor;
+  viewScale *= factor;
+  viewScale = Math.min(4, Math.max(0.2, viewScale));
+  draw();
+}, { passive:false });
+
+// Keyboard shortcuts
+document.addEventListener('keydown', e => {
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.tagName === 'TEXTAREA') return;
+  const map = { w:'wall', e:'erase', s:'spawn', p:'portal', z:'zone', h:'pan' };
+  if (map[e.key]) setTool(map[e.key]);
+  if (e.key==='f') centerView(), draw();
+});
+
+// ════════════════════════════════════════════════
+//  GRID SIZE / TILE SIZE
+// ════════════════════════════════════════════════
+function changeTileSize(px) {
+  tileSize = px;
+  document.getElementById('tile-size-val').textContent = px;
+  draw();
+}
+
+function changeGridSize(cols, rows) {
+  mapCols = cols; mapRows = rows;
+  document.getElementById('cols-val').textContent = cols;
+  document.getElementById('rows-val').textContent = rows;
+  // Prune out-of-bounds tiles
+  walls  = new Set([...walls].filter(k  => { const [x,y]=k.split(',').map(Number); return x<cols&&y<rows; }));
+  spawns = new Set([...spawns].filter(k => { const [x,y]=k.split(',').map(Number); return x<cols&&y<rows; }));
+  portals = portals.filter(p => p.gx<cols && p.gy<rows);
+  updateStats(); draw();
+}
+
+// ════════════════════════════════════════════════
+//  ZONE STAGES
+// ════════════════════════════════════════════════
+function renderZoneStages() {
+  const tbody = document.getElementById('zone-stages-body');
+  tbody.innerHTML = '';
+  zoneStages.forEach((s, i) => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td><input type="number" value="${s.at}" min="0"
+          onchange="zoneStages[${i}].at=parseInt(this.value)||0"></td>
+      <td><input type="number" value="${s.radius}" min="10"
+          onchange="zoneStages[${i}].radius=parseInt(this.value)||10;draw()"></td>
+      <td><button style="background:none;border:none;color:var(--dim);cursor:pointer;font-size:13px"
+          onclick="removeZoneStage(${i})">✕</button></td>`;
+    tbody.appendChild(tr);
+  });
+}
+
+function addZoneStage() {
+  const last = zoneStages[zoneStages.length-1] || { at:0, radius:800 };
+  zoneStages.push({ at: last.at + 60, radius: Math.max(10, last.radius - 150) });
+  renderZoneStages();
+}
+
+function removeZoneStage(i) {
+  if (zoneStages.length <= 1) return;
+  zoneStages.splice(i, 1);
+  renderZoneStages();
+}
+
+function onMapTypeChange() {
+  const isMain = document.getElementById('map-type').value === 'main';
+  if (isMain && zoneStages[0]?.radius < 1000) {
+    // Suggest slower stages for main arena
+    zoneStages = [
+      { at:0,   radius:2400 },
+      { at:60,  radius:1800 },
+      { at:120, radius:1200 },
+      { at:180, radius:750  },
+      { at:240, radius:400  },
+      { at:300, radius:150  },
+    ];
+    renderZoneStages();
+    toast('主戰場縮圈設定已套用（可自行調整）', 'ok');
+  }
+}
+
+// ════════════════════════════════════════════════
+//  PORTAL MODAL
+// ════════════════════════════════════════════════
+function openPortalModal(gx, gy) {
+  pendingPortalGx = gx; pendingPortalGy = gy;
+  document.getElementById('portal-pos-display').textContent = `格 (${gx}, ${gy})`;
+  document.getElementById('portal-label').value = '';
+  document.getElementById('portal-arrive-x').value = '';
+  document.getElementById('portal-arrive-y').value = '';
+  // Populate target maps
+  const sel = document.getElementById('portal-target-map');
+  sel.innerHTML = '<option value="">（未設定）</option>';
+  allMaps.forEach(m => {
+    if (m.id === currentMapId) return;
+    const opt = document.createElement('option');
+    opt.value = m.id; opt.textContent = m.name;
+    sel.appendChild(opt);
+  });
+  document.getElementById('modal-portal').classList.add('open');
+}
+
+function closePortalModal() {
+  document.getElementById('modal-portal').classList.remove('open');
+  pendingPortalGx = null; pendingPortalGy = null;
+}
+
+function confirmPortal() {
+  if (pendingPortalGx === null) return;
+  const targetId   = document.getElementById('portal-target-map').value;
+  const targetName = document.getElementById('portal-target-map').selectedOptions[0]?.text || '';
+  const label      = document.getElementById('portal-label').value.trim();
+  const ax = parseInt(document.getElementById('portal-arrive-x').value) || null;
+  const ay = parseInt(document.getElementById('portal-arrive-y').value) || null;
+  // Remove existing portal at same position
+  portals = portals.filter(p => !(p.gx===pendingPortalGx && p.gy===pendingPortalGy));
+  portals.push({
+    gx: pendingPortalGx, gy: pendingPortalGy,
+    targetMapId: targetId || null, targetMapName: targetName,
+    label: label || (targetName ? '→ '+targetName : '→'),
+    arriveX: ax, arriveY: ay,
+  });
+  closePortalModal();
+  updateStats(); draw(); renderPortalList();
+  toast('傳送門已設定', 'ok');
+}
+
+function renderPortalList() {
+  const el = document.getElementById('portal-list');
+  if (portals.length === 0) {
+    el.innerHTML = '<div style="font-family:var(--mono);font-size:10px;color:var(--dim)">尚無傳送門</div>';
+    return;
+  }
+  el.innerHTML = '';
+  portals.forEach((p, i) => {
+    const div = document.createElement('div');
+    div.className = 'portal-item';
+    div.innerHTML = `
+      <div class="pi-head">
+        <span class="pi-coord">🌀 格(${p.gx},${p.gy})</span>
+        <button class="pi-del" onclick="deletePortal(${i})">✕</button>
+      </div>
+      <div style="color:var(--purple)">${p.label || '→ ?'}</div>
+      <div>目標：${p.targetMapName || '（未設定）'}</div>`;
+    el.appendChild(div);
+  });
+}
+
+function deletePortal(i) {
+  portals.splice(i, 1);
+  updateStats(); draw(); renderPortalList();
+}
+
+// ════════════════════════════════════════════════
+//  STATS
+// ════════════════════════════════════════════════
+function updateStats() {
+  document.getElementById('stat-spawns').textContent  = spawns.size;
+  document.getElementById('stat-walls').textContent   = walls.size;
+  document.getElementById('stat-portals').textContent = portals.length;
+  document.getElementById('stat-grid').textContent    = `${mapCols}×${mapRows}`;
+}
+
+// ════════════════════════════════════════════════
+//  MAP DATA SERIALIZATION
+// ════════════════════════════════════════════════
+function serializeMap() {
+  const name    = document.getElementById('map-name-input').value.trim() || '未命名地圖';
+  const type    = document.getElementById('map-type').value;
+  const autoBots= document.getElementById('auto-fill-bots').checked;
+  const cx = parseInt(document.getElementById('zone-cx').value) || Math.round(mapCols/2 * tileSize);
+  const cy = parseInt(document.getElementById('zone-cy').value) || Math.round(mapRows/2 * tileSize);
+  return {
+    id:   currentMapId,
+    name, type, autoFillBots: autoBots,
+    cols: mapCols, rows: mapRows, tileSize,
+    data: {
+      walls:   [...walls].map(k => k.split(',').map(Number)),
+      spawns:  [...spawns].map(k => k.split(',').map(Number)),
+      portals: portals.map(p => ({
+        gx: p.gx, gy: p.gy,
+        targetMapId: p.targetMapId, label: p.label,
+        arriveX: p.arriveX, arriveY: p.arriveY,
+      })),
+      zone: { centerX: cx, centerY: cy, stages: zoneStages },
+    },
+  };
+}
+
+function loadMapData(mapObj) {
+  currentMapId = mapObj.id || null;
+  mapCols  = mapObj.cols  || 40;
+  mapRows  = mapObj.rows  || 30;
+  tileSize = mapObj.tileSize || 32;
+
+  document.getElementById('map-name-input').value = mapObj.name || '未命名地圖';
+  document.getElementById('map-type').value        = mapObj.type || 'room';
+  document.getElementById('auto-fill-bots').checked = mapObj.autoFillBots !== false;
+  document.getElementById('cols-range').value = mapCols;
+  document.getElementById('rows-range').value = mapRows;
+  document.getElementById('cols-val').textContent = mapCols;
+  document.getElementById('rows-val').textContent = mapRows;
+  document.getElementById('tile-size-range').value = tileSize;
+  document.getElementById('tile-size-val').textContent = tileSize;
+
+  const d = mapObj.data || {};
+  walls   = new Set((d.walls  || []).map(([x,y]) => `${x},${y}`));
+  spawns  = new Set((d.spawns || []).map(([x,y]) => `${x},${y}`));
+  portals = (d.portals || []).map(p => ({
+    ...p, targetMapName: allMaps.find(m=>m.id===p.targetMapId)?.name || p.targetMapId || '',
+  }));
+  zoneCenter = d.zone ? {
+    gx: Math.floor(d.zone.centerX / tileSize),
+    gy: Math.floor(d.zone.centerY / tileSize),
+  } : null;
+  zoneStages = d.zone?.stages || [
+    { at:0,   radius:800 },
+    { at:60,  radius:600 },
+    { at:120, radius:400 },
+    { at:180, radius:200 },
+    { at:240, radius:80  },
+  ];
+  if (d.zone) {
+    document.getElementById('zone-cx').value = d.zone.centerX;
+    document.getElementById('zone-cy').value = d.zone.centerY;
+  }
+
+  renderZoneStages(); renderPortalList(); updateStats();
+  centerView(); draw();
+}
+
+// ════════════════════════════════════════════════
+//  NEW MAP
+// ════════════════════════════════════════════════
+function newMap() {
+  currentMapId = null;
+  walls = new Set(); spawns = new Set(); portals = []; zoneCenter = null;
+  mapCols=40; mapRows=30; tileSize=32;
+  zoneStages = [
+    { at:0,radius:800},{at:60,radius:600},{at:120,radius:400},
+    {at:180,radius:200},{at:240,radius:80},
+  ];
+  document.getElementById('map-name-input').value = '新地圖';
+  document.getElementById('map-type').value = 'room';
+  document.getElementById('auto-fill-bots').checked = true;
+  document.getElementById('zone-cx').value = '';
+  document.getElementById('zone-cy').value = '';
+  document.getElementById('cols-range').value = 40;
+  document.getElementById('rows-range').value = 30;
+  document.getElementById('cols-val').textContent = 40;
+  document.getElementById('rows-val').textContent = 30;
+  document.getElementById('tile-size-range').value = 32;
+  document.getElementById('tile-size-val').textContent = 32;
+  renderZoneStages(); renderPortalList(); updateStats(); centerView(); draw();
+  setStatus('新地圖已建立');
+}
+
+function clearAll() {
+  if (!confirm('確定要清除所有格子？')) return;
+  walls.clear(); spawns.clear(); portals=[]; zoneCenter=null;
+  updateStats(); draw(); renderPortalList();
+  toast('已清除', 'ok');
+}
+
+// ════════════════════════════════════════════════
+//  SAVE / LOAD (server API)
+// ════════════════════════════════════════════════
+async function saveMap() {
+  const data = serializeMap();
+  setStatus('儲存中...');
+  try {
+    const method = currentMapId ? 'PUT' : 'POST';
+    const url    = currentMapId ? `/api/maps/${currentMapId}` : '/api/maps';
+    const res    = await fetch(url, {
+      method,
+      headers: { 'Content-Type':'application/json' },
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const saved = await res.json();
+    currentMapId = saved.id;
+    toast('地圖已儲存 ✓', 'ok');
+    setStatus('上次儲存：' + new Date().toLocaleTimeString());
+    loadMapList();
+  } catch(e) {
+    toast('儲存失敗：' + e.message, 'err');
+    setStatus('儲存失敗');
+  }
+}
+
+async function loadMapList() {
+  try {
+    const res = await fetch('/api/maps');
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    allMaps = await res.json();
+    renderMapList();
+    setStatus('載入 ' + allMaps.length + ' 張地圖');
+  } catch(e) {
+    toast('載入失敗：' + e.message, 'err');
+  }
+}
+
+async function loadMap(id) {
+  try {
+    const res = await fetch(`/api/maps/${id}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const mapObj = await res.json();
+    loadMapData(mapObj);
+    toast('地圖已載入：' + mapObj.name, 'ok');
+    renderMapList();
+  } catch(e) {
+    toast('載入失敗：' + e.message, 'err');
+  }
+}
+
+async function deleteMap(id, name) {
+  if (!confirm(`確定刪除「${name}」？`)) return;
+  try {
+    const res = await fetch(`/api/maps/${id}`, { method:'DELETE' });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    if (currentMapId === id) newMap();
+    allMaps = allMaps.filter(m => m.id !== id);
+    renderMapList();
+    toast('已刪除', 'ok');
+  } catch(e) {
+    toast('刪除失敗：' + e.message, 'err');
+  }
+}
+
+function renderMapList() {
+  const el = document.getElementById('map-list');
+  if (allMaps.length === 0) {
+    el.innerHTML = '<div style="font-family:var(--mono);font-size:10px;color:var(--dim)">尚無儲存地圖</div>';
+    return;
+  }
+  el.innerHTML = '';
+  allMaps.forEach(m => {
+    const div = document.createElement('div');
+    div.className = 'map-item' + (m.id===currentMapId ? ' active' : '');
+    div.innerHTML = `
+      <span class="mi-name">${m.name}</span>
+      <span class="mi-badge ${m.type==='main'?'main':''}">${m.type==='main'?'主戰場':'房間'}</span>
+      <button class="map-del" onclick="event.stopPropagation();deleteMap('${m.id}','${m.name}')">✕</button>`;
+    div.addEventListener('click', () => loadMap(m.id));
+    el.appendChild(div);
+  });
+}
+
+// ════════════════════════════════════════════════
+//  EXPORT / IMPORT JSON
+// ════════════════════════════════════════════════
+function exportJSON() {
+  const data = serializeMap();
+  delete data.id;
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type:'application/json' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href = url;
+  a.download = (data.name || 'map') + '.json';
+  a.click();
+  URL.revokeObjectURL(url);
+  toast('JSON 已匯出', 'ok');
+}
+
+function importJSON() {
+  document.getElementById('import-file').click();
+}
+
+function handleImportFile(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const obj = JSON.parse(e.target.result);
+      loadMapData(obj);
+      toast('JSON 已匯入：' + (obj.name||'未命名'), 'ok');
+    } catch(err) {
+      toast('JSON 格式錯誤', 'err');
+    }
+  };
+  reader.readAsText(file);
+  input.value = '';
+}
+
+// ════════════════════════════════════════════════
+//  UI HELPERS
+// ════════════════════════════════════════════════
+let toastTimer;
+function toast(msg, type='') {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = 'show ' + type;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.className = '', 2500);
+}
+
+function setStatus(msg) {
+  document.getElementById('status-msg').textContent = msg;
+}
+
+// Init
+updateStats();
+setStatus('快捷鍵：W牆 E橡皮擦 S出生點 P傳送門 Z安全中心 H平移 F置中');
+</script>
+</body>
+</html>

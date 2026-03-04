@@ -1,0 +1,1688 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>戰學者──知識大對戰 · BrainRoyale</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/phaser/3.60.0/phaser.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.6.1/socket.io.min.js"></script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=Noto+Sans+TC:wght@400;500;700&display=swap');
+
+/* ═══════════════════════════ TOKENS ═══════════════════════════ */
+:root {
+  --red:    #ff3a3a;
+  --red-glow: #ff6b6b;
+  --gold:   #f5c842;
+  --gold-glow: rgba(245,200,66,0.4);
+  --green:  #39e75f;
+  --purple: #b040ff;
+  --blue:   #4dabf7;
+  --bg:     #0a0c14;
+  --panel:  rgba(10,12,20,0.94);
+  --border: rgba(255,255,255,0.08);
+  --border-lit: rgba(255,255,255,0.15);
+}
+
+* { margin:0; padding:0; box-sizing:border-box; }
+
+body {
+  background: var(--bg);
+  font-family: 'Noto Sans TC', sans-serif;
+  overflow: hidden;
+  color: #fff;
+  height: 100vh;
+  width: 100vw;
+}
+
+/* ═══════════════════════════ LOBBY ═══════════════════════════ */
+#lobby-screen {
+  position: fixed; inset: 0; z-index: 1000;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--bg);
+  overflow: hidden;
+}
+
+/* Animated grid background */
+#lobby-screen::before {
+  content: '';
+  position: absolute; inset: 0;
+  background-image:
+    linear-gradient(rgba(77,171,247,0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(77,171,247,0.04) 1px, transparent 1px);
+  background-size: 48px 48px;
+  animation: gridDrift 20s linear infinite;
+}
+@keyframes gridDrift {
+  from { background-position: 0 0; }
+  to   { background-position: 48px 48px; }
+}
+
+/* Glow orbs */
+#lobby-screen::after {
+  content: '';
+  position: absolute; inset: 0;
+  background:
+    radial-gradient(ellipse 600px 400px at 20% 50%, rgba(176,64,255,0.08) 0%, transparent 70%),
+    radial-gradient(ellipse 500px 350px at 80% 50%, rgba(77,171,247,0.07) 0%, transparent 70%);
+  pointer-events: none;
+}
+
+.lobby-card {
+  position: relative; z-index: 1;
+  width: min(480px, 92vw);
+  background: var(--panel);
+  border: 1px solid var(--border-lit);
+  border-radius: 20px;
+  padding: 48px 40px 40px;
+  backdrop-filter: blur(24px);
+  box-shadow: 0 0 80px rgba(0,0,0,0.8), 0 0 0 1px rgba(255,255,255,0.04);
+  animation: lobbyIn 0.5s cubic-bezier(0.34,1.56,0.64,1);
+}
+@keyframes lobbyIn {
+  from { opacity:0; transform: translateY(32px) scale(0.95); }
+  to   { opacity:1; transform: translateY(0) scale(1); }
+}
+
+.lobby-logo {
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 13px;
+  letter-spacing: 4px;
+  text-transform: uppercase;
+  color: rgba(255,255,255,0.3);
+  text-align: center;
+  margin-bottom: 6px;
+}
+
+.lobby-title {
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 42px;
+  font-weight: 700;
+  text-align: center;
+  line-height: 1;
+  margin-bottom: 8px;
+  background: linear-gradient(135deg, #fff 0%, var(--gold) 50%, #ff9f43 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.lobby-subtitle {
+  text-align: center;
+  font-size: 13px;
+  color: rgba(255,255,255,0.35);
+  letter-spacing: 1px;
+  margin-bottom: 36px;
+}
+
+.lobby-field-label {
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 11px;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  color: rgba(255,255,255,0.4);
+  margin-bottom: 8px;
+}
+
+.lobby-input {
+  width: 100%;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid var(--border-lit);
+  border-radius: 10px;
+  padding: 14px 16px;
+  color: #fff;
+  font-family: 'Noto Sans TC', sans-serif;
+  font-size: 16px;
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+  margin-bottom: 16px;
+}
+.lobby-input:focus {
+  border-color: var(--gold);
+  box-shadow: 0 0 0 3px rgba(245,200,66,0.12);
+}
+.lobby-input::placeholder { color: rgba(255,255,255,0.2); }
+
+.lobby-btn {
+  width: 100%;
+  padding: 16px;
+  background: linear-gradient(135deg, var(--gold), #ff9f43);
+  border: none;
+  border-radius: 10px;
+  color: #0a0c14;
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: all 0.2s;
+  margin-top: 8px;
+  position: relative;
+  overflow: hidden;
+}
+.lobby-btn::before {
+  content: '';
+  position: absolute; inset: 0;
+  background: rgba(255,255,255,0);
+  transition: background 0.2s;
+}
+.lobby-btn:hover::before { background: rgba(255,255,255,0.1); }
+.lobby-btn:active { transform: scale(0.98); }
+.lobby-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.lobby-rules {
+  margin-top: 24px;
+  padding-top: 24px;
+  border-top: 1px solid var(--border);
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.lobby-rule-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+.rule-icon { font-size: 18px; flex-shrink: 0; margin-top: 1px; }
+.rule-text { font-size: 11px; color: rgba(255,255,255,0.4); line-height: 1.5; }
+
+/* Waiting room */
+#waiting-screen {
+  position: fixed; inset: 0; z-index: 900;
+  display: none;
+  align-items: center; justify-content: center;
+  background: var(--bg);
+  flex-direction: column; gap: 24px;
+}
+
+.waiting-title {
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 28px;
+  font-weight: 700;
+  letter-spacing: 3px;
+  color: rgba(255,255,255,0.8);
+}
+
+.waiting-count {
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 80px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--gold);
+  text-shadow: 0 0 40px var(--gold-glow);
+}
+
+.waiting-sub { font-size: 14px; color: rgba(255,255,255,0.35); letter-spacing: 1px; }
+
+/* Spinner */
+.spinner {
+  width: 40px; height: 40px;
+  border: 3px solid rgba(255,255,255,0.08);
+  border-top-color: var(--gold);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Countdown overlay */
+#countdown-overlay {
+  position: fixed; inset: 0; z-index: 800;
+  display: none;
+  align-items: center; justify-content: center;
+  background: rgba(0,0,0,0.7);
+  backdrop-filter: blur(8px);
+}
+#countdown-overlay.active { display: flex; }
+#countdown-num {
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 200px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--gold);
+  text-shadow: 0 0 100px var(--gold-glow);
+  animation: countPop 1s ease-in-out;
+}
+@keyframes countPop {
+  0%   { transform: scale(1.5); opacity: 0; }
+  20%  { transform: scale(1);   opacity: 1; }
+  80%  { transform: scale(1);   opacity: 1; }
+  100% { transform: scale(0.8); opacity: 0; }
+}
+
+/* Announcement banner */
+#announcement-banner {
+  position: fixed;
+  top: 70px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 500;
+  background: rgba(245,200,66,0.12);
+  border: 1px solid var(--gold);
+  border-radius: 8px;
+  padding: 10px 24px;
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 15px;
+  letter-spacing: 1px;
+  color: var(--gold);
+  display: none;
+  pointer-events: none;
+  animation: bannerIn 0.3s ease;
+}
+@keyframes bannerIn {
+  from { opacity:0; transform: translateX(-50%) translateY(-8px); }
+  to   { opacity:1; transform: translateX(-50%) translateY(0); }
+}
+
+/* ═══════════════════════════ HUD ═══════════════════════════ */
+#hud {
+  position: fixed; top: 16px; left: 16px;
+  z-index: 100; pointer-events: none;
+}
+#player-name {
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 12px; letter-spacing: 3px; text-transform: uppercase;
+  color: rgba(255,255,255,0.45); margin-bottom: 7px;
+}
+#hp-display { display: flex; gap: 5px; align-items: center; }
+.hp-heart { width: 22px; height: 22px; transition: all 0.3s; }
+.hp-heart svg { width:100%; height:100%; }
+.hp-heart.alive svg path { fill: var(--red); filter: drop-shadow(0 0 5px var(--red-glow)); }
+.hp-heart.dead  svg path { fill: rgba(255,255,255,0.1); }
+
+/* Alive counter */
+#alive-counter {
+  position: fixed; top: 16px; right: 16px;
+  z-index: 100; text-align: right; pointer-events: none;
+}
+#alive-label {
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 10px; letter-spacing: 3px; color: rgba(255,255,255,0.35);
+  text-transform: uppercase;
+}
+#alive-count {
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 46px; font-weight: 700; line-height: 1; color: #fff;
+  text-shadow: 0 0 20px rgba(255,255,255,0.2);
+}
+
+/* Zone timer */
+#zone-timer {
+  position: fixed; top: 16px; left: 50%; transform: translateX(-50%);
+  z-index: 100; text-align: center; pointer-events: none;
+  opacity: 0; transition: opacity 0.5s;
+}
+#zone-timer.visible { opacity: 1; }
+#zone-label {
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 10px; letter-spacing: 3px; text-transform: uppercase;
+  color: var(--purple); text-shadow: 0 0 10px var(--purple);
+}
+#zone-countdown {
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 34px; font-weight: 700;
+  color: var(--purple); text-shadow: 0 0 20px var(--purple);
+}
+
+/* Kill feed */
+#kill-feed {
+  position: fixed; top: 80px; right: 16px;
+  z-index: 100; pointer-events: none;
+  display: flex; flex-direction: column; gap: 6px; align-items: flex-end;
+}
+.kill-entry {
+  background: rgba(0,0,0,0.6);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 6px;
+  padding: 5px 10px;
+  font-size: 12px;
+  color: rgba(255,255,255,0.7);
+  animation: killFeedIn 0.25s ease, killFadeOut 0.4s ease 3.5s forwards;
+  white-space: nowrap;
+}
+@keyframes killFeedIn { from{opacity:0;transform:translateX(16px)}to{opacity:1;transform:translateX(0)} }
+@keyframes killFadeOut { to{opacity:0;transform:translateX(16px)} }
+.kill-entry strong { color: var(--red); }
+
+/* ═══════════════════════════ BATTLE UI ═══════════════════════════ */
+#battle-overlay {
+  position: fixed; inset: 0; z-index: 200;
+  display: none; align-items: center; justify-content: center;
+  background: rgba(0,0,0,0.65);
+  backdrop-filter: blur(5px);
+}
+#battle-overlay.active { display: flex; }
+
+#battle-panel {
+  width: min(600px, 92vw);
+  background: var(--panel);
+  border: 1px solid var(--border-lit);
+  border-radius: 18px;
+  overflow: hidden;
+  box-shadow: 0 0 80px rgba(0,0,0,0.8), 0 0 0 1px rgba(255,255,255,0.04),
+              0 0 40px rgba(245,200,66,0.06);
+  animation: panelIn 0.28s cubic-bezier(0.34,1.56,0.64,1);
+}
+@keyframes panelIn {
+  from { transform: scale(0.82); opacity: 0; }
+  to   { transform: scale(1);    opacity: 1; }
+}
+
+#battle-header {
+  padding: 18px 24px;
+  background: rgba(255,255,255,0.025);
+  border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: space-between;
+}
+#battle-vs-text {
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 12px; letter-spacing: 4px; color: var(--gold); text-transform: uppercase;
+}
+#battle-opponent-name {
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 16px; letter-spacing: 1px; color: rgba(255,255,255,0.75);
+}
+#battle-timer-bar { height: 3px; background: rgba(255,255,255,0.07); overflow: hidden; }
+#battle-timer-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--gold), #ff9f43);
+  transform-origin: left;
+}
+
+#battle-body { padding: 28px 24px 24px; }
+
+#question-text {
+  font-size: 18px; font-weight: 700; line-height: 1.65;
+  color: #fff; margin-bottom: 22px;
+}
+
+#options-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+
+.option-btn {
+  padding: 13px 14px;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.09);
+  border-radius: 10px;
+  color: #fff;
+  font-family: 'Noto Sans TC', sans-serif;
+  font-size: 14px;
+  cursor: pointer; text-align: left;
+  transition: all 0.15s;
+  display: flex; align-items: center; gap: 10px;
+}
+.option-btn:hover:not(:disabled) {
+  background: rgba(255,255,255,0.09);
+  border-color: rgba(255,255,255,0.22);
+  transform: translateY(-1px);
+}
+.option-btn:disabled { cursor: not-allowed; opacity: 0.5; }
+.option-label {
+  width: 24px; height: 24px; border-radius: 6px;
+  background: rgba(255,255,255,0.07);
+  display: flex; align-items: center; justify-content: center;
+  font-family: 'Rajdhani', sans-serif; font-weight: 700; font-size: 12px;
+  flex-shrink: 0; color: rgba(255,255,255,0.7);
+}
+.option-btn.correct { background: rgba(57,231,95,0.18); border-color: var(--green); }
+.option-btn.correct .option-label { background: var(--green); color: #000; }
+.option-btn.wrong   { background: rgba(255,58,58,0.15);  border-color: var(--red); }
+.option-btn.wrong .option-label   { background: var(--red);   color: #fff; }
+.option-btn.selected { border-color: var(--gold); background: rgba(245,200,66,0.08); }
+
+/* Result toast */
+#battle-result-toast {
+  position: fixed; top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 300; text-align: center; pointer-events: none;
+  opacity: 0; transition: opacity 0.3s;
+}
+#battle-result-toast.show { opacity: 1; }
+#result-main {
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 72px; font-weight: 700; line-height: 1;
+}
+#result-main.win  { color: var(--green); text-shadow: 0 0 50px var(--green); }
+#result-main.lose { color: var(--red);   text-shadow: 0 0 50px var(--red); }
+#result-sub { font-size: 14px; color: rgba(255,255,255,0.55); margin-top: 8px; letter-spacing: 1px; }
+
+/* ═══════════════════════════ ELIMINATED ═══════════════════════════ */
+#eliminated-overlay {
+  position: fixed; inset: 0; z-index: 150;
+  display: none; align-items: center; justify-content: center;
+  flex-direction: column; gap: 12px;
+  background: rgba(0,0,0,0);
+  pointer-events: none; transition: background 1s;
+}
+#eliminated-overlay.active {
+  display: flex; background: rgba(0,0,0,0.55); pointer-events: all;
+}
+#elim-title {
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 76px; font-weight: 700;
+  color: var(--red); text-shadow: 0 0 80px var(--red);
+  animation: pulseText 2s ease-in-out infinite;
+}
+@keyframes pulseText { 0%,100%{opacity:1} 50%{opacity:0.55} }
+#elim-sub { font-size: 15px; color: rgba(255,255,255,0.45); letter-spacing: 1px; }
+
+/* ═══════════════════════════ SPECTATE ═══════════════════════════ */
+#spectate-panel {
+  position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+  z-index: 100; display: none;
+  background: var(--panel);
+  border: 1px solid var(--border-lit);
+  border-radius: 14px; padding: 16px 20px;
+  min-width: 340px; text-align: center;
+  backdrop-filter: blur(16px);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+}
+#spectate-panel.active { display: block; }
+#spectate-title {
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 10px; letter-spacing: 4px;
+  color: rgba(255,255,255,0.3); text-transform: uppercase; margin-bottom: 12px;
+}
+#spectate-targets { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+.spectate-btn {
+  padding: 6px 14px;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 20px; color: #fff; font-size: 13px;
+  cursor: pointer; transition: all 0.15s;
+}
+.spectate-btn:hover { background: rgba(255,255,255,0.1); border-color: rgba(255,255,255,0.25); }
+.spectate-btn.active-spectate {
+  background: rgba(245,200,66,0.14); border-color: var(--gold); color: var(--gold);
+}
+
+/* ═══════════════════════════ MINIMAP ═══════════════════════════ */
+#minimap {
+  position: fixed; bottom: 24px; right: 24px;
+  width: 148px; height: 148px;
+  border-radius: 10px;
+  border: 1px solid rgba(255,255,255,0.1);
+  background: rgba(0,0,0,0.65);
+  z-index: 100; overflow: hidden;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+}
+#minimap-canvas { display: block; }
+#minimap-label {
+  position: absolute; bottom: 4px; left: 0; right: 0;
+  text-align: center;
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 8px; letter-spacing: 2px;
+  color: rgba(255,255,255,0.25);
+  pointer-events: none;
+}
+
+/* ═══════════════════════════ ZONE WARNING ═══════════════════════════ */
+#zone-warning {
+  position: fixed; inset: 0; pointer-events: none; z-index: 90;
+  opacity: 0; transition: opacity 0.5s;
+  box-shadow: inset 0 0 100px rgba(176,64,255,0.55);
+}
+#zone-warning.active { animation: zonePulse 1.4s ease-in-out infinite; }
+@keyframes zonePulse { 0%,100%{opacity:0} 50%{opacity:1} }
+
+/* ═══════════════════════════ PAUSED OVERLAY ═══════════════════════════ */
+#paused-overlay {
+  position: fixed; inset: 0; z-index: 400;
+  display: none; align-items: center; justify-content: center;
+  background: rgba(0,0,0,0.6); backdrop-filter: blur(4px); pointer-events: none;
+}
+#paused-overlay.active { display: flex; }
+.paused-text {
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 64px; font-weight: 700; letter-spacing: 10px;
+  color: var(--gold); text-shadow: 0 0 60px var(--gold-glow);
+  animation: pulseText 2s ease-in-out infinite;
+}
+
+/* ═══════════════════════════ WINNER SCREEN ═══════════════════════════ */
+#winner-screen {
+  position: fixed; inset: 0; z-index: 600;
+  display: none; align-items: center; justify-content: center;
+  flex-direction: column; gap: 12px;
+  background: rgba(0,0,0,0.85); backdrop-filter: blur(10px);
+}
+#winner-screen.active { display: flex; }
+.winner-crown { font-size: 80px; animation: crownBounce 1s ease-in-out infinite; }
+@keyframes crownBounce { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-10px)} }
+.winner-label {
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 14px; letter-spacing: 5px; color: var(--gold); text-transform: uppercase;
+}
+.winner-name {
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 64px; font-weight: 700; color: #fff;
+  text-shadow: 0 0 60px rgba(255,255,255,0.3);
+}
+.winner-btn {
+  margin-top: 16px; padding: 12px 36px;
+  background: rgba(245,200,66,0.15); border: 1px solid var(--gold);
+  border-radius: 10px; color: var(--gold);
+  font-family: 'Rajdhani', sans-serif; font-size: 14px; letter-spacing: 2px;
+  text-transform: uppercase; cursor: pointer; transition: all 0.2s;
+}
+.winner-btn:hover { background: rgba(245,200,66,0.25); }
+
+/* ═══════════════════════════ GAME CONTAINER ═══════════════════════════ */
+#game-container { position: fixed; inset: 0; }
+</style>
+</head>
+<body>
+
+<!-- ══════════ LOBBY ══════════ -->
+<div id="lobby-screen">
+  <div class="lobby-card">
+    <div class="lobby-logo">BrainRoyale · 戰學者──知識大對戰</div>
+    <div class="lobby-title">BATTLE ROYALE</div>
+    <div class="lobby-subtitle">回答最快的人才能生存</div>
+
+    <div class="lobby-field-label">你的名稱</div>
+    <input class="lobby-input" id="name-input" type="text"
+      placeholder="輸入你的遊戲名稱…" maxlength="12" spellcheck="false">
+
+    <div class="lobby-field-label">房間代碼</div>
+    <input class="lobby-input" id="room-input" type="text"
+      placeholder="room_001" maxlength="20" spellcheck="false" value="room_001">
+
+    <button class="lobby-btn" id="join-btn" onclick="joinGame()">進入房間</button>
+
+    <div class="lobby-rules">
+      <div class="lobby-rule-item">
+        <span class="rule-icon">⚔️</span>
+        <div class="rule-text">靠近對手觸發 1v1 答題對戰</div>
+      </div>
+      <div class="lobby-rule-item">
+        <span class="rule-icon">❤️</span>
+        <div class="rule-text">初始 5 滴血，答錯失去 1 滴</div>
+      </div>
+      <div class="lobby-rule-item">
+        <span class="rule-icon">🔴</span>
+        <div class="rule-text">安全圈持續縮小，待在圈外扣血</div>
+      </div>
+      <div class="lobby-rule-item">
+        <span class="rule-icon">👑</span>
+        <div class="rule-text">最後存活的玩家獲勝</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════ WAITING ROOM ══════════ -->
+<div id="waiting-screen">
+  <div class="waiting-title">等待玩家加入</div>
+  <div class="waiting-count" id="waiting-count">1</div>
+  <div class="waiting-sub">教師將手動開始遊戲</div>
+  <div class="spinner"></div>
+</div>
+
+<!-- ══════════ COUNTDOWN ══════════ -->
+<div id="countdown-overlay">
+  <div id="countdown-num">3</div>
+</div>
+
+<!-- ══════════ HUD ══════════ -->
+<div id="hud">
+  <div id="player-name">PLAYER</div>
+  <div id="hp-display"></div>
+</div>
+
+<div id="alive-counter">
+  <div id="alive-label">Alive</div>
+  <div id="alive-count">--</div>
+</div>
+
+<div id="zone-timer">
+  <div id="zone-label">☠ Zone Shrinks In</div>
+  <div id="zone-countdown">--</div>
+</div>
+
+<div id="kill-feed"></div>
+<div id="announcement-banner"></div>
+
+<!-- ══════════ GAME CANVAS ══════════ -->
+<div id="game-container"></div>
+
+<!-- ══════════ BATTLE UI ══════════ -->
+<div id="battle-overlay">
+  <div id="battle-panel">
+    <div id="battle-header">
+      <div id="battle-vs-text">⚔ BATTLE</div>
+      <div id="battle-opponent-name"></div>
+    </div>
+    <div id="battle-timer-bar">
+      <div id="battle-timer-fill"></div>
+    </div>
+    <div id="battle-body">
+      <div id="question-text"></div>
+      <div id="options-grid"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════ RESULT TOAST ══════════ -->
+<div id="battle-result-toast">
+  <div id="result-main">WIN</div>
+  <div id="result-sub"></div>
+</div>
+
+<!-- ══════════ ELIMINATED ══════════ -->
+<div id="eliminated-overlay">
+  <div id="elim-title">ELIMINATED</div>
+  <div id="elim-sub">血量歸零 — 進入觀戰模式</div>
+</div>
+
+<!-- ══════════ SPECTATE ══════════ -->
+<div id="spectate-panel">
+  <div id="spectate-title">Spectate Mode · 觀戰模式</div>
+  <div id="spectate-targets"></div>
+</div>
+
+<!-- ══════════ MINIMAP ══════════ -->
+<div id="minimap">
+  <canvas id="minimap-canvas" width="148" height="148"></canvas>
+  <div id="minimap-label">MINIMAP</div>
+</div>
+
+<!-- ══════════ ZONE WARNING ══════════ -->
+<div id="zone-warning"></div>
+
+<!-- ══════════ PAUSED ══════════ -->
+<div id="paused-overlay">
+  <div class="paused-text">PAUSED</div>
+</div>
+
+<!-- ══════════ WINNER ══════════ -->
+<div id="winner-screen">
+  <div class="winner-crown">👑</div>
+  <div class="winner-label">Victory Royale</div>
+  <div class="winner-name" id="winner-name"></div>
+  <button class="winner-btn" onclick="location.reload()">再玩一次</button>
+</div>
+
+<script>
+'use strict';
+// ═══════════════════════════════════════════
+//  CLIENT CONFIG
+// ═══════════════════════════════════════════
+const CFG = {
+  MAP_W:        4800,
+  MAP_H:        4800,
+  MAX_HP:       5,
+  COLLISION_D:  60,
+  KNOCKBACK_D:  160,
+  SPEED:        200,
+  FOG_R:        380,
+  BATTLE_MS:    15000,
+  SYNC_MS:      100,
+  SERVER:       window.location.origin,
+  MM_SCALE:     148 / 4800,
+  WALL_RADIUS:  24,    // player collision radius vs walls (px)
+  TILE_SIZE:    32,    // default tile size when no map loaded
+};
+
+// ═══════════════════════════════════════════
+//  GAME STATE
+// ═══════════════════════════════════════════
+const state = {
+  myId: null, myName: 'Player', myHp: CFG.MAX_HP,
+  isAlive: true, isLocked: false, inBattle: false,
+  isSpectating: false, spectateTargetId: null,
+  remotePlayers: new Map(),
+  aliveCount: 0, zoneData: null,
+  battleTimerRef: null, zoneTimerRef: null,
+  gameStarted: false,
+  currentBattleId: null,
+  spawnX: null, spawnY: null,
+  mapData: null,      // 地圖資料（牆壁/傳送門，從 player:init 收到）
+  wallTiles: null,    // Set<'gx,gy'>，快速碰撞查詢
+};
+
+let socket = null;
+let phaserGame = null;
+let gameScene = null;
+
+// ═══════════════════════════════════════════
+//  LOBBY
+// ═══════════════════════════════════════════
+document.getElementById('name-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter') joinGame();
+});
+
+function joinGame() {
+  const name   = document.getElementById('name-input').value.trim();
+  const roomId = document.getElementById('room-input').value.trim() || 'room_001';
+  if (!name) { document.getElementById('name-input').focus(); return; }
+
+  state.myName = name;
+  document.getElementById('join-btn').disabled = true;
+
+  // Connect socket
+  socket = io(CFG.SERVER, { query: { role: 'player' } });
+
+  socket.on('connect', () => {
+    socket.emit('player:join', { name, roomId });
+    showWaiting();
+  });
+
+  socket.on('connect_error', () => {
+    document.getElementById('join-btn').disabled = false;
+    alert('無法連線至伺服器，請確認伺服器已啟動。');
+  });
+
+  setupSocketEvents();
+}
+
+function showWaiting() {
+  document.getElementById('lobby-screen').style.display = 'none';
+  document.getElementById('waiting-screen').style.display = 'flex';
+}
+
+function startCountdown(cb) {
+  document.getElementById('waiting-screen').style.display = 'none';
+  const overlay = document.getElementById('countdown-overlay');
+  const numEl   = document.getElementById('countdown-num');
+  let n = 3;
+  overlay.classList.add('active');
+  numEl.textContent = n;
+
+  const iv = setInterval(() => {
+    n--;
+    if (n <= 0) {
+      clearInterval(iv);
+      overlay.classList.remove('active');
+      cb();
+    } else {
+      numEl.style.animation = 'none';
+      void numEl.offsetWidth;
+      numEl.style.animation = 'countPop 1s ease-in-out';
+      numEl.textContent = n;
+    }
+  }, 1000);
+}
+
+// ═══════════════════════════════════════════
+//  SOCKET EVENTS
+// ═══════════════════════════════════════════
+function setupSocketEvents() {
+
+  socket.on('player:init', ({ id, x, y, name, mapData }) => {
+    state.myId    = id;
+    state.myName  = name;
+    state.spawnX  = x;
+    state.spawnY  = y;
+    document.getElementById('player-name').textContent = name.toUpperCase();
+    // Store map data for wall rendering + collision
+    if (mapData) {
+      state.mapData   = mapData;
+      state.wallTiles = new Set(mapData.walls.map(([gx,gy]) => gx+','+gy));
+    } else {
+      state.mapData = null; state.wallTiles = null;
+    }
+  });
+
+  socket.on('teacher:world_update_count', ({ count }) => {
+    document.getElementById('waiting-count').textContent = count;
+  });
+
+  socket.on('world:update', ({ players, aliveCount }) => {
+    state.aliveCount = aliveCount;
+    document.getElementById('alive-count').textContent = aliveCount;
+    if (gameScene) gameScene.onWorldUpdate(players);
+  });
+
+  socket.on('game:countdown', () => {
+    if (!state.gameStarted) {
+      state.gameStarted = true;
+      startCountdown(() => initPhaserGame());
+    }
+  });
+
+  socket.on('game:paused', ({ paused }) => {
+    document.getElementById('paused-overlay').classList.toggle('active', paused);
+    if (gameScene) gameScene.setPaused(paused);
+  });
+
+  socket.on('game:announcement', ({ message }) => {
+    showAnnouncement(message);
+  });
+
+  socket.on('game:force_ended', ({ message }) => {
+    showAnnouncement('教師已結束本局遊戲');
+  });
+
+  socket.on('battle:start', data => {
+    if (gameScene) gameScene.onBattleStart(data);
+  });
+
+  socket.on('battle:result', result => {
+    if (gameScene) gameScene.onBattleResult(result);
+  });
+
+  socket.on('player:knockback', ({ myNewPos }) => {
+    if (gameScene) gameScene.onKnockback(myNewPos);
+  });
+
+  socket.on('player:hp_update', ({ playerId, newHp, source }) => {
+    if (playerId !== state.myId) return;
+    state.myHp = newHp;
+    if (gameScene) gameScene.updateHpDisplay(newHp);
+    if (source === 'zone') triggerZoneWarning();
+  });
+
+  socket.on('player:eliminated', ({ spectateTargets }) => {
+    state.isAlive      = false;
+    state.isSpectating = true;
+    showEliminatedUI(spectateTargets);
+    addKillFeed('你被淘汰了', true);
+  });
+
+  socket.on('player:position_correct', ({ x, y }) => {
+    if (gameScene) gameScene.correctPosition(x, y);
+  });
+
+  socket.on('teacher:eliminated', ({ playerName }) => {
+    addKillFeed(`<strong>${esc(playerName)}</strong> 被淘汰`);
+  });
+
+  socket.on('spectate:sync', ({ targetId, x, y }) => {
+    if (state.spectateTargetId === targetId && gameScene) {
+      gameScene.spectateMove(x, y);
+    }
+  });
+
+  socket.on('zone:update', zoneData => {
+    state.zoneData = zoneData;
+    updateZoneTimer(zoneData.shrinkAt);
+  });
+
+  socket.on('game:winner', ({ winnerId, winnerName }) => {
+    showWinnerScreen(winnerName, winnerId === state.myId);
+  });
+
+  socket.on('game:kicked', () => {
+    alert('你已被教師移除。');
+    location.reload();
+  });
+}
+
+// ═══════════════════════════════════════════
+//  PHASER INIT
+// ═══════════════════════════════════════════
+// Client-side wall tile overlap check
+function clientWallCheck(px, py) {
+  if (!state.wallTiles || state.wallTiles.size === 0) return false;
+  const ts = state.mapData?.tileSize || CFG.TILE_SIZE;
+  const gx = Math.floor(px / ts);
+  const gy = Math.floor(py / ts);
+  for (let dy=-1; dy<=1; dy++) {
+    for (let dx=-1; dx<=1; dx++) {
+      if (!state.wallTiles.has((gx+dx)+','+(gy+dy))) continue;
+      const wx=(gx+dx)*ts, wy=(gy+dy)*ts;
+      if (px+CFG.WALL_RADIUS>wx && px-CFG.WALL_RADIUS<wx+ts &&
+          py+8>wy && py-32<wy+ts) return true;
+    }
+  }
+  return false;
+}
+
+function initPhaserGame() {
+  buildHpDisplay();
+
+  // ── 角色繪製工具 ──────────────────────────────────────────
+  function lighten(hex) {
+    let c = hex.replace('#','');
+    if (c.length===3) c = c.split('').map(x=>x+x).join('');
+    const r=Math.min(255,parseInt(c.slice(0,2),16)+40);
+    const g=Math.min(255,parseInt(c.slice(2,4),16)+40);
+    const b=Math.min(255,parseInt(c.slice(4,6),16)+40);
+    return `rgb(${r},${g},${b})`;
+  }
+
+  // 畫一幀角色（48×48 canvas），phase=0~7 控制跑步週期
+  function drawCharFrame(ctx, skin, shirt, pants, phase, hasBackpack) {
+    ctx.clearRect(0,0,48,48);
+    const t = phase / 8;
+    const leg  =  Math.sin(t * Math.PI * 2) * 5;  // 左腿偏移
+    const arm  = -leg;                              // 手臂反向
+
+    const px = (x,y,w,h,col,a=1) => {
+      ctx.globalAlpha = a;
+      ctx.fillStyle   = col;
+      ctx.fillRect(x, y, w, h);
+      ctx.globalAlpha = 1;
+    };
+
+    // 地面陰影
+    ctx.globalAlpha = 0.15;
+    ctx.fillStyle = '#000';
+    ctx.beginPath();
+    ctx.ellipse(24, 46, 11, 3, 0, 0, Math.PI*2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+
+    // 腿（左右交替擺動）
+    px(13, 29+Math.round( leg), 8, 12, pants);
+    px(13, 41+Math.round( leg), 8,  5, '#1c1c2e'); // 左鞋
+    px(27, 29+Math.round(-leg), 8, 12, pants);
+    px(27, 41+Math.round(-leg), 8,  5, '#1c1c2e'); // 右鞋
+
+    // 身體
+    px(12, 18, 24, 14, shirt);
+    px(14, 18, 20,  4, lighten(shirt)); // 領子
+    px(12, 30, 24,  3, '#6b3f1e');      // 腰帶
+
+    // 背包
+    if (hasBackpack) {
+      px(34, 19, 9, 13, '#e09600');
+      px(35, 30, 7,  3, '#bf7f00');
+    }
+
+    // 手臂（與腿反向）
+    px( 5, 20+Math.round( arm), 8, 12, skin);
+    px( 5, 30+Math.round( arm), 8,  4, lighten(skin));
+    px(35, 20+Math.round(-arm), 8, 12, skin);
+    px(35, 30+Math.round(-arm), 8,  4, lighten(skin));
+
+    // 頭
+    px(13,  3, 22, 18, skin);         // 臉
+    px(13,  3, 22,  6, '#2a1508');    // 頭髮頂
+    px(13,  3,  5, 10, '#2a1508');    // 頭髮側
+    px(34,  3,  3, 10, '#2a1508');    // 頭髮側右
+
+    // 眼睛
+    ctx.fillStyle='#fff';
+    ctx.fillRect(17,10,5,5); ctx.fillRect(26,10,5,5);
+    ctx.fillStyle='#1a1a2a';
+    ctx.fillRect(19,11,3,3); ctx.fillRect(28,11,3,3);
+
+    // 嘴
+    px(19, 17, 10, 2, '#b05040');
+
+    // 耳朵
+    px(10, 10, 4, 6, skin);
+    px(34, 10, 4, 6, skin);
+  }
+
+  class GameScene extends Phaser.Scene {
+    constructor() {
+      super('GameScene');
+      this.localPlayer  = null;
+      this.localLabel   = null;
+      this.playerShadow = null;
+      this.fog          = null;
+      this.zoneGfx      = null;
+      this.keys         = null;
+      this.lastSync     = 0;
+      this.isPaused     = false;
+      this.mmCtx        = document.getElementById('minimap-canvas').getContext('2d');
+      gameScene = this;
+    }
+
+    preload() {
+      // ── 角色 texture：每幀獨立 48×48 canvas，用 this.textures.addCanvas 註冊 ──
+      // lighten 和 drawCharFrame 在外層 initPhaserGame scope，這裡可直接用
+      for (let i=0; i<8; i++) {
+        const hc = document.createElement('canvas');
+        hc.width = hc.height = 48;
+        drawCharFrame(hc.getContext('2d'), '#f4a261','#3a7bd5','#1e3a8a', i, true);
+        this.textures.addCanvas('hero_f'+i, hc);
+
+        const ec = document.createElement('canvas');
+        ec.width = ec.height = 48;
+        drawCharFrame(ec.getContext('2d'), '#d4845a','#c0392b','#5d1010', i, false);
+        this.textures.addCanvas('enemy_f'+i, ec);
+      }
+      // 幽靈（淘汰玩家）
+      const gc = document.createElement('canvas');
+      gc.width = gc.height = 48;
+      const gCtx = gc.getContext('2d');
+      gCtx.globalAlpha = 0.38;
+      drawCharFrame(gCtx, '#999','#777','#555', 0, false);
+      gCtx.globalAlpha = 1;
+      this.textures.addCanvas('pghost', gc);
+
+      // 地面 tile
+      const gndC = document.createElement('canvas');
+      gndC.width = gndC.height = 48;
+      const g = gndC.getContext('2d');
+      g.fillStyle='#5a8a30'; g.fillRect(0,0,48,48);
+      g.fillStyle='#4e7a28'; g.fillRect(0,0,24,24); g.fillRect(24,24,24,24);
+      g.fillStyle='#6aab38';
+      const rng2 = new Phaser.Math.RandomDataGenerator(['gr']);
+      for(let i=0;i<14;i++) g.fillRect(rng2.between(2,44),rng2.between(2,44),2,rng2.between(3,6));
+      this.textures.addCanvas('ground', gndC);
+
+      // 小路 tile
+      const pC = document.createElement('canvas');
+      pC.width = pC.height = 48;
+      const p2 = pC.getContext('2d');
+      p2.fillStyle='#a08050'; p2.fillRect(0,0,48,48);
+      p2.fillStyle='rgba(0,0,0,0.06)';
+      p2.fillRect(0,0,2,48); p2.fillRect(46,0,2,48);
+      this.textures.addCanvas('path', pC);
+
+      // 陰影（Graphics → texture，完全無位置偏移）
+      const shdG = this.make.graphics({x:0,y:0,add:false});
+      shdG.fillStyle(0x000000, 0.22);
+      shdG.fillEllipse(20,5,40,10);
+      shdG.generateTexture('shadow',40,10);
+      shdG.destroy();
+    }
+
+    create() {
+      // ── 動畫定義（使用獨立 texture key，不用 frame index，完全不會跳位） ──
+      const heroFrames  = Array.from({length:8},(_,i)=>({key:`hero_f${i}`,  frame:0}));
+      const enemyFrames = Array.from({length:8},(_,i)=>({key:`enemy_f${i}`, frame:0}));
+
+      this.anims.create({ key:'hero_run',  frames:heroFrames,  frameRate:10, repeat:-1 });
+      this.anims.create({ key:'hero_idle', frames:[heroFrames[0]],  frameRate:1,  repeat:-1 });
+      this.anims.create({ key:'enemy_run', frames:enemyFrames, frameRate:10, repeat:-1 });
+      this.anims.create({ key:'enemy_idle',frames:[enemyFrames[0]], frameRate:1,  repeat:-1 });
+
+      // 世界邊界
+      this.physics.world.setBounds(0,0,CFG.MAP_W,CFG.MAP_H);
+
+      // ── 牆壁碰撞群組（地圖有牆時建立）──────────────────────
+      this.wallGroup = this.physics.add.staticGroup();
+      this.wallGfx   = this.add.graphics().setDepth(2);
+      if (state.mapData && state.mapData.walls.length > 0) {
+        this._buildWalls();
+      }
+
+      // 地面
+      this.add.tileSprite(0,0,CFG.MAP_W,CFG.MAP_H,'ground').setOrigin(0,0).setDepth(0);
+
+      // 小路十字
+      this.add.tileSprite(CFG.MAP_W/2,0, 80,CFG.MAP_H,'path').setOrigin(0.5,0).setDepth(1);
+      this.add.tileSprite(0,CFG.MAP_H/2, CFG.MAP_W,80,'path').setOrigin(0,0.5).setDepth(1);
+
+      // 樹木
+      const rng = new Phaser.Math.RandomDataGenerator(['tr42']);
+      const treeGfx = this.add.graphics().setDepth(3);
+      for(let i=0;i<220;i++){
+        const tx=rng.between(80,CFG.MAP_W-80), ty=rng.between(80,CFG.MAP_H-80), tr=rng.between(12,28);
+        treeGfx.fillStyle(rng.pick([0x3d7a1a,0x4a8f20,0x52a028]),1);
+        treeGfx.fillCircle(tx,ty,tr);
+        treeGfx.fillStyle(rng.pick([0x5aa832,0x68c040,0x72c840]),0.85);
+        treeGfx.fillCircle(tx-tr*0.2,ty-tr*0.25,tr*0.62);
+        treeGfx.fillStyle(0x7a4f2a,1);
+        treeGfx.fillRect(tx-3,ty+tr-4,6,8);
+      }
+
+      // 縮圈圖形
+      this.zoneGfx = this.add.graphics().setDepth(4);
+
+      // ── 主角 ──
+      // 使用伺服器分配的隨機出生點（state.spawnX/Y），若尚未收到則 fallback 到中心
+      const cx = state.spawnX || CFG.MAP_W/2;
+      const cy = state.spawnY || CFG.MAP_H/2;
+
+      // 陰影放在腳下（depth 9，主角 depth 10）
+      this.playerShadow = this.add.image(cx, cy+4, 'shadow')
+        .setDepth(9).setAlpha(0.7);
+
+      // 主角使用 hero_f0 作為初始 texture
+      // origin(0.5, 1) → 錨點在腳底中間，切換動畫幀時絕對不會位移
+      this.localPlayer = this.physics.add.sprite(cx, cy, 'hero_f0')
+        .setOrigin(0.5, 1)
+        .setCollideWorldBounds(true)
+        .setDepth(10)
+        .setScale(1);
+
+      // 播放 idle 動畫
+      this.localPlayer.play('hero_idle');
+
+      // 玩家與牆壁碰撞
+      if (this.wallGroup) {
+        this.physics.add.collider(this.localPlayer, this.wallGroup);
+      }
+
+      // 名字標籤（跟著 localPlayer 腳底位置）
+      this.localLabel = this.add.text(cx, cy, state.myName, {
+        fontFamily:'Rajdhani', fontSize:'14px',
+        color:'#ffffff', stroke:'#1a3a6e', strokeThickness:4,
+      }).setOrigin(0.5, 1).setDepth(11);
+
+      // 鏡頭跟隨（跟隨錨點=腳底，不是中心）
+      this.cameras.main
+        .setBounds(0,0,CFG.MAP_W,CFG.MAP_H)
+        .startFollow(this.localPlayer, true, 0.09, 0.09);
+      this.scale.on('resize', sz => {
+        this.cameras.main.setSize(sz.width, sz.height);
+      });
+
+      // 迷霧
+      this.fog = this.add.graphics().setDepth(50).setScrollFactor(0);
+
+      // 鍵盤
+      this.keys = this.input.keyboard.addKeys({
+        W:    Phaser.Input.Keyboard.KeyCodes.W,
+        A:    Phaser.Input.Keyboard.KeyCodes.A,
+        S:    Phaser.Input.Keyboard.KeyCodes.S,
+        D:    Phaser.Input.Keyboard.KeyCodes.D,
+        UP:   Phaser.Input.Keyboard.KeyCodes.UP,
+        DOWN: Phaser.Input.Keyboard.KeyCodes.DOWN,
+        LEFT: Phaser.Input.Keyboard.KeyCodes.LEFT,
+        RIGHT:Phaser.Input.Keyboard.KeyCodes.RIGHT,
+      });
+
+      this._wasMoving = false;
+
+      this.updateHpDisplay(state.myHp);
+    }
+
+    // ── 遠端玩家生成 ─────────────────────────────────────────
+    _spawnRemote(p) {
+      const shadow = this.add.image(p.x, p.y+4, 'shadow')
+        .setDepth(8).setAlpha(0.5);
+      // 遠端玩家也用 enemy_f0 初始，origin(0.5,1) 腳底錨點
+      const sprite = this.add.sprite(p.x, p.y, 'enemy_f0')
+        .setOrigin(0.5, 1).setDepth(9);
+      sprite.play('enemy_idle');
+      const nameText = this.add.text(p.x, p.y, p.name||'?', {
+        fontFamily:'Rajdhani', fontSize:'13px',
+        color:'#ffaaaa', stroke:'#4a0000', strokeThickness:4,
+      }).setOrigin(0.5,1).setDepth(10);
+
+      state.remotePlayers.set(p.id, {
+        sprite, nameText, shadow,
+        hp:p.hp, isAlive:p.isAlive,
+        prevX:p.x, prevY:p.y,
+      });
+    }
+
+    // ── 遠端玩家更新 ─────────────────────────────────────────
+    onWorldUpdate(players) {
+      const seen = new Set();
+      players.forEach(p => {
+        if (p.id === state.myId) return;
+        seen.add(p.id);
+        if (!state.remotePlayers.has(p.id)) this._spawnRemote(p);
+
+        const rp = state.remotePlayers.get(p.id);
+        const moved = Math.hypot(p.x-rp.prevX, p.y-rp.prevY) > 2;
+
+        // ── 動畫切換（只在狀態改變時觸發，不每幀呼叫）──
+        if (p.isAlive) {
+          const wantAnim = moved ? 'enemy_run' : 'enemy_idle';
+          if (rp.sprite.anims.currentAnim?.key !== wantAnim) {
+            rp.sprite.play(wantAnim);
+          }
+          // 翻轉方向
+          if (p.x < rp.prevX - 1) rp.sprite.setFlipX(true);
+          if (p.x > rp.prevX + 1) rp.sprite.setFlipX(false);
+        }
+
+        rp.prevX = p.x; rp.prevY = p.y;
+
+        // 平滑移動（tween 不影響 sprite 的 texture/anim）
+        this.tweens.killTweensOf(rp.sprite);
+        this.tweens.killTweensOf(rp.shadow);
+        this.tweens.add({
+          targets: [rp.sprite, rp.shadow],
+          x: p.x, y: (target) => target === rp.shadow ? p.y+4 : p.y,
+          duration: CFG.SYNC_MS * 1.2, ease: 'Linear',
+        });
+        rp.nameText.setPosition(p.x, p.y);
+        rp.hp = p.hp; rp.isAlive = p.isAlive;
+
+        if (!p.isAlive) {
+          rp.sprite.stop();
+          rp.sprite.setTexture('pghost').setAlpha(0.4).setDepth(7);
+          if (rp.shadow) rp.shadow.setAlpha(0);
+        } else {
+          rp.sprite.setAlpha(1).setDepth(9);
+          if (rp.shadow) rp.shadow.setAlpha(0.5);
+        }
+      });
+
+      // 移除已離線玩家
+      state.remotePlayers.forEach((rp, id) => {
+        if (!seen.has(id)) {
+          rp.sprite.destroy();
+          rp.nameText.destroy();
+          if (rp.shadow) rp.shadow.destroy();
+          state.remotePlayers.delete(id);
+        }
+      });
+    }
+
+    setPaused(v) { this.isPaused = v; }
+
+    correctPosition(x, y) { this.localPlayer.setPosition(x, y); }
+
+    spectateMove(x, y) {
+      this.tweens.add({ targets:this.localPlayer, x, y, duration:220, ease:'Linear' });
+    }
+
+    onBattleStart({ battleId, opponentName, question }) {
+      // 清除舊戰鬥的殘留 timer（防止雙重 submit）
+      clearTimeout(state.battleTimerRef);
+      state.isLocked = true; state.inBattle = true;
+      this.localPlayer.setVelocity(0, 0);
+      this.localPlayer.play('hero_idle');
+      showBattleUI(battleId, opponentName, question);
+    }
+
+    onBattleResult(result) { hideBattleUI(result); }
+
+    onKnockback(pos) {
+      // 先殺掉舊的 knockback tween，防止舊的 onComplete 覆蓋新的 battle 狀態
+      this.tweens.killTweensOf(this.localPlayer);
+      this.tweens.add({
+        targets: this.localPlayer, x:pos.x, y:pos.y,
+        duration:380, ease:'Back.easeOut',
+        onComplete: () => {
+          state.isLocked = false;
+          // 注意：不在這裡清 inBattle，inBattle 由 hideBattleUI 和 submitAnswer 管理
+          // 避免新一場對戰的 inBattle=true 被舊 tween 的 onComplete 蓋掉
+        },
+      });
+    }
+
+    updateHpDisplay(hp) {
+      for(let i=0;i<CFG.MAX_HP;i++){
+        const h = document.getElementById(`heart_${i}`);
+        if(h) h.className = 'hp-heart ' + (i<hp?'alive':'dead');
+      }
+      if(hp<=2 && this.cameras?.main) this.cameras.main.shake(320, 0.005*(3-hp));
+    }
+
+    // ── 主迴圈 update ─────────────────────────────────────────
+    update(time) {
+      if (!this.localPlayer) return;
+
+      // 取得輸入速度
+      let vx=0, vy=0;
+      if (!state.isLocked && !this.isPaused && state.isAlive) {
+        const k = this.keys, sp = CFG.SPEED;
+        if (k.A.isDown||k.LEFT.isDown)  vx -= 1;
+        if (k.D.isDown||k.RIGHT.isDown) vx += 1;
+        if (k.W.isDown||k.UP.isDown)    vy -= 1;
+        if (k.S.isDown||k.DOWN.isDown)  vy += 1;
+        if (vx && vy) { vx*=0.7071; vy*=0.7071; }
+        this.localPlayer.setVelocity(vx*sp, vy*sp);
+      } else {
+        this.localPlayer.setVelocity(0, 0);
+      }
+
+      const moving = (vx!==0||vy!==0) && state.isAlive && !state.isLocked;
+
+      // ── 動畫：只在「移動/停止」狀態切換時呼叫 play()，不每幀重設 ──
+      if (moving !== this._wasMoving) {
+        this.localPlayer.play(moving ? 'hero_run' : 'hero_idle');
+        this._wasMoving = moving;
+      }
+
+      // ── 方向翻轉（只在實際改變方向時設定）──
+      if (vx < 0) this.localPlayer.setFlipX(true);
+      if (vx > 0) this.localPlayer.setFlipX(false);
+
+      // 陰影跟隨腳底（localPlayer origin 是 (0.5,1) 即腳底）
+      if (this.playerShadow) {
+        this.playerShadow.setPosition(
+          this.localPlayer.x,
+          this.localPlayer.y + 4
+        );
+        this.playerShadow.setScale(moving ? 1.1 : 1.0, moving ? 0.85 : 1.0);
+      }
+
+      // 名字標籤跟隨（顯示在頭頂，腳底 y - sprite 高度 - 間距）
+      this.localLabel.setPosition(this.localPlayer.x, this.localPlayer.y - 50);
+
+      // 座標同步至伺服器（節流）
+      if (time - this.lastSync > CFG.SYNC_MS && !state.isLocked && !this.isPaused && state.isAlive) {
+        this.lastSync = time;
+        // Only send if not overlapping a wall tile (extra client guard)
+        const px = this.localPlayer.x, py = this.localPlayer.y;
+        if (!clientWallCheck(px, py)) {
+          socket.emit('player:move', { x: px, y: py, timestamp: Date.now() });
+        }
+      }
+
+      if (!state.isLocked && state.isAlive) this._highlightNear();
+
+      this._drawFog();
+      this._drawZone();
+      this._drawMinimap();
+    }
+
+    _buildWalls() {
+      if (!state.mapData) return;
+      const { walls, tileSize } = state.mapData;
+      const ts = tileSize || 32;
+      const gfx = this.wallGfx;
+      gfx.clear();
+
+      // Precompute neighbor set for top-edge detection
+      const wSet = state.wallTiles;
+
+      walls.forEach(([gx, gy]) => {
+        const px = gx * ts, py = gy * ts;
+
+        // Base stone fill
+        gfx.fillStyle(0x3d4f5c, 1);
+        gfx.fillRect(px, py, ts, ts);
+
+        // Top highlight (only if no wall above)
+        if (!wSet.has(gx+','+(gy-1))) {
+          gfx.fillStyle(0x6b8394, 1);
+          gfx.fillRect(px+1, py+1, ts-2, 3);
+        }
+
+        // Inner shadow bottom-right
+        gfx.fillStyle(0x1e2d35, 0.5);
+        gfx.fillRect(px+ts-3, py, 3, ts);
+        gfx.fillRect(px, py+ts-3, ts, 3);
+
+        // Physics body (invisible rectangle)
+        const body = this.add.rectangle(px+ts/2, py+ts/2, ts, ts)
+          .setVisible(false);
+        this.physics.add.existing(body, true); // true = static
+        this.wallGroup.add(body);
+      });
+
+      // Draw portal overlays
+      if (state.mapData.portals) {
+        state.mapData.portals.forEach(p => {
+          const px2 = p.gx * ts, py2 = p.gy * ts;
+          const grad = gfx.fillStyle(0xb040ff, 0.25);
+          gfx.fillRect(px2, py2, ts, ts);
+          gfx.lineStyle(2, 0xb040ff, 0.6);
+          gfx.strokeRect(px2+1, py2+1, ts-2, ts-2);
+        });
+      }
+    }
+
+    _highlightNear() {
+      const mx=this.localPlayer.x, my=this.localPlayer.y;
+      state.remotePlayers.forEach(rp=>{
+        if(!rp.isAlive) return;
+        const d=Math.hypot(rp.sprite.x-mx, rp.sprite.y-my);
+        if(d < CFG.COLLISION_D*2.2) rp.sprite.setTint(0xffff44);
+        else rp.sprite.clearTint();
+      });
+    }
+
+    _drawFog() {
+      this.fog.clear();
+      if(state.isSpectating) return;
+      const W=this.cameras.main.width, H=this.cameras.main.height;
+      const cx=W/2, cy=H/2, R=CFG.FOG_R;
+      // 1. 全螢幕鋪黑（外圍完全遮蔽）
+      this.fog.fillStyle(0x000000, 0.82);
+      this.fog.fillRect(0,0,W,H);
+      // 2. 從外到內，越靠近中心越透明，用半透明黑圓層層「蓋掉」黑底
+      //    i 從大到小：先畫大圓（輕度覆蓋），再畫小圓（覆蓋更多）
+      //    最終效果：中心完全透明，邊緣保留黑底
+      const STEPS = 24;
+      for(let i=0; i<=STEPS; i++){
+        const t = i / STEPS;           // 0 = 邊緣, 1 = 中心
+        const radius = R * t;
+        const alpha  = 0.82 * (1-t);   // 中心 alpha→0，邊緣 alpha→0.82
+        this.fog.fillStyle(0x000000, alpha);
+        this.fog.fillCircle(cx, cy, radius);
+      }
+    }
+
+    _drawZone() {
+      this.zoneGfx.clear();
+      if(!state.zoneData) return;
+      const {centerX:cx,centerY:cy,currentRadius:r} = state.zoneData;
+      this.zoneGfx.fillStyle(0x5500aa,0.10);
+      this.zoneGfx.fillRect(0,0,CFG.MAP_W,CFG.MAP_H);
+      this.zoneGfx.fillStyle(0x000000,0);
+      this.zoneGfx.fillCircle(cx,cy,r);
+      this.zoneGfx.lineStyle(3,0xb040ff,0.9);
+      this.zoneGfx.strokeCircle(cx,cy,r);
+    }
+
+    _drawMinimap() {
+      const ctx=this.mmCtx, sc=CFG.MM_SCALE, sz=148;
+      ctx.clearRect(0,0,sz,sz);
+      ctx.fillStyle='#1e3010'; ctx.fillRect(0,0,sz,sz);
+      if(state.zoneData){
+        const {centerX:cx,centerY:cy,currentRadius:r}=state.zoneData;
+        ctx.beginPath(); ctx.arc(cx*sc,cy*sc,r*sc,0,Math.PI*2);
+        ctx.strokeStyle='rgba(176,64,255,0.7)'; ctx.lineWidth=1.5; ctx.stroke();
+      }
+      state.remotePlayers.forEach(rp=>{
+        ctx.beginPath();
+        ctx.arc(rp.sprite.x*sc, rp.sprite.y*sc, rp.isAlive?2.5:1.5, 0, Math.PI*2);
+        ctx.fillStyle=rp.isAlive?'#ff6b6b':'rgba(255,255,255,0.2)';
+        ctx.fill();
+      });
+      if(this.localPlayer){
+        const px=this.localPlayer.x*sc, py=this.localPlayer.y*sc;
+        ctx.beginPath(); ctx.arc(px,py,3.5,0,Math.PI*2);
+        ctx.fillStyle='#4dabf7'; ctx.fill();
+        ctx.beginPath(); ctx.arc(px,py,6,0,Math.PI*2);
+        ctx.fillStyle='rgba(77,171,247,0.15)'; ctx.fill();
+      }
+    }
+  }
+
+  phaserGame = new Phaser.Game({
+    type: Phaser.AUTO,
+    width: window.innerWidth,
+    height: window.innerHeight,
+    parent: 'game-container',
+    backgroundColor: '#3d5c28',
+    physics: {
+      default: 'arcade',
+      arcade: { gravity:{y:0}, debug:false },
+    },
+    scale: {
+      mode: Phaser.Scale.RESIZE,
+      autoCenter: Phaser.Scale.CENTER_BOTH,
+    },
+    scene: [GameScene],
+  });
+}
+
+
+// ═══════════════════════════════════════════
+//  BATTLE UI
+// ═══════════════════════════════════════════
+function showBattleUI(battleId, opponentName, question) {
+  const overlay = document.getElementById('battle-overlay');
+  document.getElementById('battle-opponent-name').textContent = opponentName;
+  document.getElementById('question-text').textContent = question.text;
+
+  // 記錄當前 battleId，讓 submitAnswer 可以過濾舊的呼叫
+  state.currentBattleId = battleId;
+
+  const grid = document.getElementById('options-grid');
+  grid.innerHTML = '';
+  const labels = ['A','B','C','D'];
+
+  question.options.forEach((opt, i) => {
+    const btn = document.createElement('button');
+    btn.className = 'option-btn';
+    btn.innerHTML = `<span class="option-label">${labels[i]}</span>${esc(opt.text)}`;
+    btn.onclick = () => submitAnswer(battleId, opt.id, btn, grid);
+    grid.appendChild(btn);
+  });
+
+  overlay.classList.add('active');
+
+  // Timer bar
+  const fill = document.getElementById('battle-timer-fill');
+  fill.style.transition = 'none';
+  fill.style.transform  = 'scaleX(1)';
+  requestAnimationFrame(() => {
+    fill.style.transition = `transform ${CFG.BATTLE_MS}ms linear`;
+    fill.style.transform  = 'scaleX(0)';
+  });
+
+  state.battleTimerRef = setTimeout(() => {
+    if(state.inBattle && state.currentBattleId === battleId) {
+      submitAnswer(battleId, null, null, grid);
+    }
+  }, CFG.BATTLE_MS);
+}
+
+function submitAnswer(battleId, answerId, clickedBtn, grid) {
+  if(!state.inBattle) return;
+  if(state.currentBattleId !== battleId) return;  // 舊 battleId 的 callback，忽略
+  clearTimeout(state.battleTimerRef);
+  state.inBattle = false;   // 立即鎖住，防止重複送出
+  if(clickedBtn) clickedBtn.classList.add('selected');
+  grid.querySelectorAll('.option-btn').forEach(b => b.disabled = true);
+  socket.emit('battle:answer', { battleId, answerId, clientTimestamp: Date.now() });
+}
+
+function hideBattleUI({ battleId, winnerId, loserId, correctAnswer, loserNewHp, loserEliminated }) {
+  const isCurrent = (battleId === state.currentBattleId);
+
+  // 只有當前局的結果才能修改 inBattle 狀態
+  // 舊局的延遲結果不應干擾新一場對戰
+  if(isCurrent) {
+    document.getElementById('battle-overlay').classList.remove('active');
+    state.inBattle = false;
+    clearTimeout(state.battleTimerRef);
+  }
+
+  if(!isCurrent) return;  // 舊局結果，完全忽略
+
+  // Mark correct/wrong options
+  const grid = document.getElementById('options-grid');
+  const opts = ['a','b','c','d'];
+  grid.querySelectorAll('.option-btn').forEach((btn,i) => {
+    if(opts[i] === correctAnswer) btn.classList.add('correct');
+    else if(btn.classList.contains('selected')) btn.classList.add('wrong');
+  });
+
+  const toast = document.getElementById('battle-result-toast');
+  const main  = document.getElementById('result-main');
+  const sub   = document.getElementById('result-sub');
+  const iWin  = winnerId === state.myId;
+
+  main.className   = 'result-main ' + (iWin ? 'win' : 'lose');
+  main.textContent = iWin ? 'WIN' : 'LOSE';
+  sub.textContent  = iWin
+    ? '答題正確！對手失去一滴血 ❤'
+    : (loserNewHp !== null ? `失去一滴血，剩餘 ${loserNewHp} 滴` : '超時未作答');
+
+  toast.classList.add('show');
+
+  if(loserEliminated && loserId === state.myId) {
+    setTimeout(()=>{ toast.classList.remove('show'); }, 1600);
+  } else {
+    setTimeout(()=>{ toast.classList.remove('show'); }, 2400);
+  }
+}
+
+// ═══════════════════════════════════════════
+//  HP DISPLAY
+// ═══════════════════════════════════════════
+function buildHpDisplay() {
+  const c = document.getElementById('hp-display');
+  c.innerHTML = '';
+  const svg = `<svg viewBox="0 0 24 24"><path d="M12 21.593c-5.63-5.539-11-10.297-11-14.402 0-3.791 3.068-5.191 5.281-5.191 1.312 0 4.151.501 5.719 4.457 1.59-3.968 4.464-4.447 5.726-4.447 2.54 0 5.274 1.621 5.274 5.181 0 4.069-5.136 8.625-11 14.402z"/></svg>`;
+  for(let i=0;i<CFG.MAX_HP;i++){
+    const d=document.createElement('div');
+    d.className='hp-heart alive'; d.innerHTML=svg; d.id=`heart_${i}`;
+    c.appendChild(d);
+  }
+}
+
+// ═══════════════════════════════════════════
+//  ELIMINATED / SPECTATE
+// ═══════════════════════════════════════════
+function showEliminatedUI(spectateTargets) {
+  const elim = document.getElementById('eliminated-overlay');
+  elim.classList.add('active');
+  setTimeout(()=>{ elim.style.pointerEvents='none'; }, 3000);
+
+  const panel = document.getElementById('spectate-panel');
+  panel.classList.add('active');
+
+  const cont = document.getElementById('spectate-targets');
+  cont.innerHTML = '';
+  spectateTargets.forEach(t => {
+    const btn = document.createElement('button');
+    btn.className = 'spectate-btn';
+    btn.textContent = t.name;
+    btn.onclick = () => {
+      state.spectateTargetId = t.id;
+      socket.emit('spectate:follow',{targetId:t.id});
+      document.querySelectorAll('.spectate-btn').forEach(b=>b.classList.remove('active-spectate'));
+      btn.classList.add('active-spectate');
+    };
+    cont.appendChild(btn);
+  });
+}
+
+// ═══════════════════════════════════════════
+//  ZONE TIMER
+// ═══════════════════════════════════════════
+function updateZoneTimer(shrinkAt) {
+  document.getElementById('zone-timer').classList.add('visible');
+  const el = document.getElementById('zone-countdown');
+  if(state.zoneTimerRef) clearInterval(state.zoneTimerRef);
+  state.zoneTimerRef = setInterval(()=>{
+    const rem = Math.max(0, Math.ceil((shrinkAt - Date.now())/1000));
+    el.textContent = rem + 's';
+    if(rem<=0) clearInterval(state.zoneTimerRef);
+  }, 500);
+}
+
+// ═══════════════════════════════════════════
+//  ZONE WARNING
+// ═══════════════════════════════════════════
+function triggerZoneWarning() {
+  const w = document.getElementById('zone-warning');
+  w.classList.add('active');
+  setTimeout(()=>w.classList.remove('active'), 3000);
+}
+
+// ═══════════════════════════════════════════
+//  KILL FEED
+// ═══════════════════════════════════════════
+function addKillFeed(html, isSelf=false) {
+  const feed = document.getElementById('kill-feed');
+  const el   = document.createElement('div');
+  el.className = 'kill-entry';
+  el.innerHTML = isSelf ? `<strong style="color:var(--red)">${html}</strong>` : html;
+  feed.appendChild(el);
+  setTimeout(()=>el.remove(), 4000);
+}
+
+// ═══════════════════════════════════════════
+//  ANNOUNCEMENT
+// ═══════════════════════════════════════════
+function showAnnouncement(msg) {
+  const b = document.getElementById('announcement-banner');
+  b.textContent = '📢 ' + msg;
+  b.style.display = 'block';
+  setTimeout(()=>{ b.style.display='none'; }, 5000);
+}
+
+// ═══════════════════════════════════════════
+//  WINNER SCREEN
+// ═══════════════════════════════════════════
+function showWinnerScreen(name, isMe) {
+  const ws = document.getElementById('winner-screen');
+  document.getElementById('winner-name').textContent = name + (isMe?' (YOU!)':'');
+  ws.classList.add('active');
+}
+
+// ═══════════════════════════════════════════
+//  UTILS
+// ═══════════════════════════════════════════
+function esc(s) {
+  return String(s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// Focus name input on load
+window.addEventListener('load', ()=> document.getElementById('name-input').focus());
+</script>
+</body>
+</html>
