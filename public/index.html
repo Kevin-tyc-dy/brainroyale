@@ -1413,20 +1413,31 @@ function initPhaserGame() {
       if(state.isSpectating) return;
       const W=this.cameras.main.width, H=this.cameras.main.height;
       const cx=W/2, cy=H/2, R=CFG.FOG_R;
-      // 1. 全螢幕鋪黑（外圍完全遮蔽）
-      this.fog.fillStyle(0x000000, 0.01);
-      this.fog.fillRect(0,0,W,H);
-      // 2. 從外到內，越靠近中心越透明，用半透明黑圓層層「蓋掉」黑底
-      //    i 從大到小：先畫大圓（輕度覆蓋），再畫小圓（覆蓋更多）
-      //    最終效果：中心完全透明，邊緣保留黑底
-      const STEPS = 24;
-      for(let i=0; i<=STEPS; i++){
-        const t = i / STEPS;           // 0 = 邊緣, 1 = 中心
-        const radius = R * t;
-        const alpha  = 0.01 * (1-t);   // 中心 alpha→0，邊緣 alpha→0.01
-        this.fog.fillStyle(0x000000, alpha);
-        this.fog.fillCircle(cx, cy, radius);
+
+      // ── 霧效：strokeCircle 環帶法 ──────────────────────────
+      // 原理：用寬線條（lineStyle）畫同心圓環
+      //   - 中心附近：alpha≈0（透明，看得到地圖）
+      //   - 視野邊緣：alpha 漸增
+      //   - 視野外：fillRect 全黑
+      const STEPS  = 36;
+      const ringW  = (R / STEPS) + 1;   // 每環寬度（+1 避免縫隙）
+
+      // 1. 從外往內畫視野邊緣漸層環（alpha 從高到低）
+      for (let i = STEPS; i >= 1; i--) {
+        const t     = i / STEPS;             // 1=最外, ~0=中心
+        const r     = R * t;
+        const alpha = Math.pow(t, 2) * 0.88; // 平方讓中心更透明
+        this.fog.lineStyle(ringW, 0x000000, alpha);
+        this.fog.strokeCircle(cx, cy, r);
       }
+
+      // 2. 視野外（半徑 > R）補全黑
+      // 用一個大矩形 + 再畫一個反向遮罩圓
+      // 做法：畫足夠厚的外環到螢幕角落
+      const cornerR = Math.ceil(Math.hypot(W, H));
+      const gapW    = cornerR - R + 4;
+      this.fog.lineStyle(gapW, 0x000000, 0.9);
+      this.fog.strokeCircle(cx, cy, R + gapW / 2);
     }
 
     _drawZone() {
