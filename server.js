@@ -1009,6 +1009,27 @@ io.on('connection', socket => {
       socket.emit('qbank:room_banks_updated',{roomId,bankIds:room?[...room.selectedBankIds]:[]});
     });
 
+    // ── Bot 設定 ──────────────────────────────────────────
+    socket.on('teacher:bot_settings', ({ roomId, botEnabled, botCount }) => {
+      const room = getRoom(roomId || teacherRoom);
+      if (!room) { socket.emit('bot:error', { msg: '找不到房間' }); return; }
+      if (room.gameStarted) { socket.emit('bot:error', { msg: '遊戲進行中，無法變更 Bot 設定' }); return; }
+      room.botEnabled = !!botEnabled;
+      room.botCount   = (botCount===null||botCount===undefined) ? null : Math.max(0,Math.min(parseInt(botCount)||0,CONFIG.MAX_PLAYERS));
+      const info = { botEnabled: room.botEnabled, botCount: room.botCount };
+      console.log(`[Bot] room=${room.id} botEnabled=${room.botEnabled} botCount=${room.botCount}`);
+      toTeachers(room.id, 'bot:settings_updated', info);
+      socket.emit('bot:settings_updated', info);  // 也回傳給發送者
+      socket.emit('bot:settings_updated', info);
+    });
+    socket.on('teacher:get_bot_settings', ({ roomId }) => {
+      const room = getRoom(roomId || teacherRoom);
+      socket.emit('bot:settings_updated', {
+        botEnabled: room ? room.botEnabled : true,
+        botCount:   room ? room.botCount   : null,
+      });
+    });
+
     socket.on('map:set_room_map', async ({ roomId, mapId }) => {
       const room = rooms.get(roomId || teacherRoom);
       if (!room) { socket.emit('map:error',{ msg:'找不到房間' }); return; }
