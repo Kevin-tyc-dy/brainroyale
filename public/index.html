@@ -1414,7 +1414,7 @@ function initPhaserGame() {
       const W=this.cameras.main.width, H=this.cameras.main.height;
       const cx=W/2, cy=H/2, R=CFG.FOG_R;
       // 1. 全螢幕鋪黑（外圍完全遮蔽）
-      this.fog.fillStyle(0x000000, 0.82);
+      this.fog.fillStyle(0x000000, 0.01);
       this.fog.fillRect(0,0,W,H);
       // 2. 從外到內，越靠近中心越透明，用半透明黑圓層層「蓋掉」黑底
       //    i 從大到小：先畫大圓（輕度覆蓋），再畫小圓（覆蓋更多）
@@ -1423,7 +1423,7 @@ function initPhaserGame() {
       for(let i=0; i<=STEPS; i++){
         const t = i / STEPS;           // 0 = 邊緣, 1 = 中心
         const radius = R * t;
-        const alpha  = 0.82 * (1-t);   // 中心 alpha→0，邊緣 alpha→0.82
+        const alpha  = 0.01 * (1-t);   // 中心 alpha→0，邊緣 alpha→0.01
         this.fog.fillStyle(0x000000, alpha);
         this.fog.fillCircle(cx, cy, radius);
       }
