@@ -398,6 +398,19 @@ table.import-tbl tr.row-ok td  { }
     </button>
   </div>
   <div class="sec">
+    <div class="sec-lbl">Map / 地圖</div>
+    <select id="map-select" style="width:100%;font-family:var(--mono);font-size:12px;background:var(--bg2);border:1px solid var(--borderL);color:var(--text);padding:6px 8px;border-radius:var(--r);margin-bottom:8px;cursor:pointer">
+      <option value="">── 預設地圖（無牆壁）──</option>
+    </select>
+    <div id="map-status" style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-bottom:8px">尚未載入地圖</div>
+    <button class="cbtn cbtn-neu" onclick="applyMap()" id="btn-apply-map">
+      <span class="icon">🗺</span><div><div class="lbl">Apply Map</div><div class="sub">套用地圖到目前房間</div></div>
+    </button>
+    <button class="cbtn cbtn-neu" onclick="window.open('/map-editor','_blank')" style="margin-top:6px">
+      <span class="icon">✏️</span><div><div class="lbl">Open Map Editor</div><div class="sub">開啟地圖編輯器</div></div>
+    </button>
+  </div>
+  <div class="sec">
     <div class="sec-lbl">Safe Zone</div>
     <div class="zrow"><span class="zlbl">Current Radius</span><span class="zval" id="zv">2400 px</span></div>
     <div class="ztrack"><div class="zfill" id="zbar" style="width:100%"></div></div>
@@ -720,6 +733,8 @@ function switchTab(name){
   if(name==='qbank' && socket && conn) {
     socket.emit('qbank:get_all');
     socket.emit('qbank:get_room_banks',{ roomId: getRoomId() });
+    loadMapList();
+    socket.emit('map:get_room_map', { roomId: getRoomId() });
   }
 }
 
@@ -1509,6 +1524,39 @@ function downloadTemplate(type) {
   }
 }
 renderMap();
+
+  // ── 地圖選擇 ──────────────────────────────────────────────
+  async function loadMapList() {
+    try {
+      const res = await fetch('/api/maps');
+      const maps = await res.json();
+      const sel = document.getElementById('map-select');
+      sel.innerHTML = '<option value="">── 預設地圖（無牆壁）──</option>';
+      maps.forEach(m => {
+        const opt = document.createElement('option');
+        opt.value = m.id;
+        opt.textContent = m.name + (m.type === 'main' ? '  🏆' : '');
+        sel.appendChild(opt);
+      });
+    } catch(e) { console.warn('[Map] loadMapList failed:', e.message); }
+  }
+
+  function applyMap() {
+    const mapId = document.getElementById('map-select').value || null;
+    socket.emit('map:set_room_map', { roomId: getRoomId(), mapId });
+  }
+
+  socket.on('map:room_map_updated', ({ mapId, mapName }) => {
+    document.getElementById('map-status').textContent =
+      mapId ? '已載入：' + mapName : '預設地圖（無牆壁）';
+    // Sync select dropdown
+    const sel = document.getElementById('map-select');
+    if (sel) sel.value = mapId || '';
+  });
+
+  socket.on('map:error', ({ msg }) => {
+    document.getElementById('map-status').textContent = '⚠ ' + msg;
+  });
 </script>
 </body>
 </html>
