@@ -387,6 +387,22 @@ table.import-tbl tr.row-ok td  { }
 <div id="side">
   <div class="sec">
     <div class="sec-lbl">Game Controls</div>
+    <div style="margin-bottom:10px">
+      <div class="sec-lbl" style="margin-bottom:6px">Bot 設定</div>
+      <label style="display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:12px;color:var(--text);cursor:pointer;margin-bottom:8px">
+        <input type="checkbox" id="bot-enabled" checked onchange="updateBotSettings()"
+          style="width:16px;height:16px;accent-color:var(--amber);cursor:pointer">
+        <span>啟用 Bot 補滿玩家</span>
+      </label>
+      <div id="bot-count-row" style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+        <span style="font-family:var(--mono);font-size:12px;color:var(--muted);white-space:nowrap">Bot 數量</span>
+        <input type="number" id="bot-count" min="0" max="29" placeholder="自動補滿"
+          onchange="updateBotSettings()"
+          style="width:80px;font-family:var(--mono);font-size:12px;background:var(--bg2);border:1px solid var(--borderL);color:var(--text);padding:4px 8px;border-radius:var(--r);text-align:center">
+        <span style="font-family:var(--mono);font-size:10px;color:var(--muted)">空白=自動補滿</span>
+      </div>
+      <div id="bot-status" style="font-family:var(--mono);font-size:10px;color:var(--amber)">Bot：自動補滿至 30 人</div>
+    </div>
     <button class="cbtn cbtn-start" id="bs" onclick="ctrl('start')" disabled>
       <span class="icon">▶</span><div><div class="lbl">Start Game</div><div class="sub">Begin round for all players</div></div>
     </button>
@@ -735,6 +751,7 @@ function switchTab(name){
     socket.emit('qbank:get_room_banks',{ roomId: getRoomId() });
     loadMapList();
     socket.emit('map:get_room_map', { roomId: getRoomId() });
+    socket.emit('teacher:get_bot_settings', { roomId: getRoomId() });
   }
 }
 
@@ -1525,6 +1542,39 @@ function downloadTemplate(type) {
 }
 renderMap();
 
+
+  // ── Bot 設定 ──────────────────────────────────────────────
+  function updateBotSettings() {
+    const botEnabled = document.getElementById('bot-enabled').checked;
+    const raw        = document.getElementById('bot-count').value.trim();
+    const botCount   = raw === '' ? null : parseInt(raw);
+    const row        = document.getElementById('bot-count-row');
+    const status     = document.getElementById('bot-status');
+    row.style.opacity       = botEnabled ? '1' : '0.4';
+    row.style.pointerEvents = botEnabled ? '' : 'none';
+    if (!botEnabled) {
+      status.textContent = 'Bot：已停用，純人類對戰';
+      status.style.color = 'var(--muted)';
+    } else if (botCount === null) {
+      status.textContent = 'Bot：自動補滿至 30 人';
+      status.style.color = 'var(--amber)';
+    } else {
+      status.textContent = `Bot：固定加入 ${botCount} 隻`;
+      status.style.color = 'var(--green)';
+    }
+    if (!socket || !conn) return;
+    socket.emit('teacher:bot_settings', { roomId: getRoomId(), botEnabled, botCount });
+  }
+  socket.on('bot:settings_updated', ({ botEnabled, botCount }) => {
+    const cb  = document.getElementById('bot-enabled');
+    const inp = document.getElementById('bot-count');
+    if (cb)  cb.checked = botEnabled;
+    if (inp) inp.value  = botCount !== null ? botCount : '';
+    updateBotSettings();
+  });
+  socket.on('bot:error', ({ msg }) => {
+    document.getElementById('bot-status').textContent = '⚠ ' + msg;
+  });
   // ── 地圖選擇 ──────────────────────────────────────────────
   async function loadMapList() {
     try {
