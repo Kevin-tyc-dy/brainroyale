@@ -398,7 +398,9 @@ function getRoom(id) {
       questionPool: [],
       mapId:   null,
       mapObj:  null,
-      wallSet: new Set(),
+      wallSet:    new Set(),
+      botEnabled: true,
+      botCount:   null,
     });
     console.log(`[Room] Created: ${id}`);
   }
@@ -482,8 +484,14 @@ function startGame(room) {
   if(room.gameStarted) return;
   room.gameStarted = true;
   room.startAt     = Date.now();
-  const needed = CONFIG.MAX_PLAYERS - room.players.size;
-  if (needed > 0) { spawnBots(room, needed); console.log('[Bot] Spawned '+needed+' bots.'); }
+  if (room.botEnabled) {
+    const humanCount = [...room.players.values()].filter(p=>!p.isBot).length;
+    const wanted = room.botCount !== null ? room.botCount : CONFIG.MAX_PLAYERS - humanCount;
+    const toSpawn = Math.max(0, Math.min(wanted, CONFIG.MAX_PLAYERS - humanCount));
+    if (toSpawn > 0) { spawnBots(room, toSpawn); console.log('[Bot] Spawned '+toSpawn+' bots.'); }
+  } else {
+    console.log('[Bot] Bots disabled for this room.');
+  }
   console.log('[Game] '+room.id+' STARTED ('+room.players.size+'p)');
 
   // Broadcast countdown to players
