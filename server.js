@@ -104,44 +104,170 @@ const CONFIG = {
 //  套件：mysql2  →  npm install mysql2
 //  連線設定：.env 檔案（與 server.js 同目錄）
 // ═══════════════════════════════════════════════
-// NO-DB MODE
-// 題庫 + 地圖：記憶體儲存
-const memBanks     = new Map();
-const memQuestions = new Map();
-const memMaps      = new Map();
-function memId() { return Date.now().toString(36)+Math.random().toString(36).slice(2,5); }
+const mysql = require('mysql2/promise');
+
+// 連線池（最多 10 條連線，自動重連）
+// Zeabur 自動注入 MYSQL_* 變數；本地開發用 DB_* (.env)
+const pool = mysql.createPool({
+  host:               process.env.MYSQL_HOST     || process.env.DB_HOST,
+  port:               parseInt(process.env.MYSQL_PORT     || process.env.DB_PORT     || '3306'),
+  user:               process.env.MYSQL_USERNAME  || process.env.DB_USER,
+  password:           process.env.MYSQL_PASSWORD  || process.env.DB_PASSWORD,
+  database:           process.env.MYSQL_DATABASE  || process.env.DB_NAME,
+  charset:            'utf8mb4',
+  timezone:           '+08:00',
+  waitForConnections: true,
+  connectionLimit:    10,
+  queueLimit:         0,
+  connectTimeout:     10000,
+});
 
 // ── 建表（首次啟動自動建立，已存在則跳過）──────
-async function initDB() { /* NO-DB */ }
+async function initDB() {
+  const conn = await pool.getConnection();
+  try {
+    await conn.query(`
+      CREATE TABLE IF NOT EXISTS banks (
+        id          VARCHAR(40)  PRIMARY KEY,
+        name        VARCHAR(100) NOT NULL,
+        school_year VARCHAR(10)  NOT NULL DEFAULT '',
+        grade       VARCHAR(5)   NOT NULL DEFAULT '',
+        subject     VARCHAR(20)  NOT NULL DEFAULT '',
+        chapter     VARCHAR(100) NOT NULL DEFAULT '',
+        description TEXT,
+        created_at  BIGINT       NOT NULL
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    `);
+    await conn.query(`
+      CREATE TABLE IF NOT EXISTS questions (
+        id          VARCHAR(40)  PRIMARY KEY,
+        bank_id     VARCHAR(40)  NOT NULL,
+        text        TEXT         NOT NULL,
+        opts        JSON         NOT NULL,
+        ans         VARCHAR(5)   NOT NULL,
+        difficulty  VARCHAR(10)  NOT NULL DEFAULT 'medium',
+        tags        VARCHAR(200) NOT NULL DEFAULT '',
+        created_at  BIGINT       NOT NULL,
+        FOREIGN KEY (bank_id) REFERENCES banks(id) ON DELETE CASCADE,
+        INDEX idx_bank (bank_id)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    `);
+    await conn.query(`
+      CREATE TABLE IF NOT EXISTS maps (
+        id             VARCHAR(40)  PRIMARY KEY,
+        name           VARCHAR(100) NOT NULL,
+        type           VARCHAR(20)  NOT NULL DEFAULT 'room',
+        cols           INT          NOT NULL DEFAULT 40,
+        rows           INT          NOT NULL DEFAULT 30,
+        tile_size      INT          NOT NULL DEFAULT 32,
+        data           JSON         NOT NULL,
+        auto_fill_bots TINYINT      NOT NULL DEFAULT 1,
+        created_at     BIGINT       NOT NULL,
+        updated_at     BIGINT       NOT NULL
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    `);
+    console.log('[MySQL] Tables ready.');
 
-async function seedData() { /* NO-DB */ }
+    // Seed（只在 banks 表完全空白時插入範例資料）
+    const [[{ c }]] = await conn.query('SELECT COUNT(*) AS c FROM banks');
+    if (c === 0) {
+      console.log('[MySQL] Empty DB — inserting seed data...');
+      await seedData(conn);
+      console.log('[MySQL] Seed complete.');
+    } else {
+      console.log(`[MySQL] DB loaded (${c} banks).`);
+    }
+  } finally {
+    conn.release();
+  }
+}
+
+async function seedData(conn) {
+  const now = Date.now();
+  await conn.query(
+    `INSERT INTO banks (id,name,school_year,grade,subject,chapter,description,created_at) VALUES ?`,
+    [[
+      ['bank_sci',    '自然科學範例題庫', '113', '5', '自然', '第一章：地球與宇宙', '範例示範用', now],
+      ['bank_social', '社會科範例題庫',   '113', '5', '社會', '第三章：台灣地理',   '台灣地理試題', now],
+    ]]
+  );
+  const qs = [
+    ['q1','bank_sci',  '地球距離太陽約多少公里？',         JSON.stringify([{id:'a',text:'約 1 億 5 千萬公里'},{id:'b',text:'約 3 億公里'},{id:'c',text:'約 5 千萬公里'},{id:'d',text:'約 2 億公里'}]),   'a','medium','地球,太陽',  now],
+    ['q2','bank_sci',  '水分子的化學式是什麼？',            JSON.stringify([{id:'a',text:'CO₂'},{id:'b',text:'H₂O'},{id:'c',text:'O₂'},{id:'d',text:'NaCl'}]),                                            'b','easy',  '化學,分子式',now],
+    ['q3','bank_sci',  '光速約為每秒多少公里？',            JSON.stringify([{id:'a',text:'約 30 萬公里/秒'},{id:'b',text:'約 3 萬公里/秒'},{id:'c',text:'約 300 公里/秒'},{id:'d',text:'約 3000 公里/秒'}]),'a','medium','光速,物理',  now],
+    ['q4','bank_sci',  '人體最大的器官是哪個？',            JSON.stringify([{id:'a',text:'心臟'},{id:'b',text:'肝臟'},{id:'c',text:'皮膚'},{id:'d',text:'大腸'}]),                                         'c','easy',  '人體,器官',  now],
+    ['q5','bank_sci',  '哪位科學家提出「相對論」？',        JSON.stringify([{id:'a',text:'牛頓'},{id:'b',text:'伽利略'},{id:'c',text:'愛因斯坦'},{id:'d',text:'波耳'}]),                                   'c','easy',  '科學家',     now],
+    ['s1','bank_social','臺灣最高峰是哪一座山？',           JSON.stringify([{id:'a',text:'雪山'},{id:'b',text:'玉山'},{id:'c',text:'南湖大山'},{id:'d',text:'秀姑巒山'}]),                                 'b','easy',  '臺灣,地理',  now],
+    ['s2','bank_social','二次世界大戰結束於哪一年？',       JSON.stringify([{id:'a',text:'1943'},{id:'b',text:'1944'},{id:'c',text:'1945'},{id:'d',text:'1946'}]),                                         'c','medium','歷史,二戰',  now],
+    ['s3','bank_social','金字塔位於哪個國家？',             JSON.stringify([{id:'a',text:'伊拉克'},{id:'b',text:'伊朗'},{id:'c',text:'沙烏地阿拉伯'},{id:'d',text:'埃及'}]),                               'd','easy',  '世界地理',   now],
+  ];
+  await conn.query(
+    `INSERT INTO questions (id,bank_id,text,opts,ans,difficulty,tags,created_at) VALUES ?`, [qs]
+  );
+}
+
+// ── DB Query Helpers ────────────────────────────
+function newId(prefix = '') {
+  return prefix + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+}
+
+function parseQ(row) {
+  // MySQL JSON 欄位會自動 parse；若為字串則手動 parse
+  const opts = typeof row.opts === 'string' ? JSON.parse(row.opts) : row.opts;
+  return { ...row, opts };
+}
+
+function serializeBank(row, questions = null) {
+  return {
+    id:            row.id,
+    name:          row.name,
+    schoolYear:    row.school_year,
+    grade:         row.grade,
+    subject:       row.subject,
+    chapter:       row.chapter,
+    description:   row.description || '',
+    createdAt:     row.created_at,
+    questionCount: Number(row.question_count ?? (questions ? questions.length : 0)),
+    questions:     questions || [],
+  };
+}
 
 async function getAllBanksInfo() {
-  return [...memBanks.values()].map(b => ({...b,
-    questionCount:[...memQuestions.values()].filter(q=>q.bankId===b.id).length, questions:[]}));
+  const [rows] = await pool.query(`
+    SELECT b.*, COUNT(q.id) AS question_count
+    FROM banks b LEFT JOIN questions q ON q.bank_id = b.id
+    GROUP BY b.id ORDER BY b.created_at ASC
+  `);
+  return rows.map(b => serializeBank(b, null));
 }
 
 async function getBankDetail(bankId) {
-  const b = memBanks.get(bankId); if (!b) return null;
-  const qs = [...memQuestions.values()].filter(q=>q.bankId===bankId);
-  return {...b, questionCount:qs.length, questions:qs};
+  const [[bank]] = await pool.query('SELECT * FROM banks WHERE id = ?', [bankId]);
+  if (!bank) return null;
+  const [qs] = await pool.query('SELECT * FROM questions WHERE bank_id = ? ORDER BY created_at ASC', [bankId]);
+  bank.question_count = qs.length;
+  return serializeBank(bank, qs.map(parseQ));
 }
 
-const SAMPLE_QUESTIONS = [
-  {id:'sq1',bankId:'sample',text:'1 + 1 = ?',opts:[{id:'A',text:'1'},{id:'B',text:'2'},{id:'C',text:'3'},{id:'D',text:'4'}],ans:'B',difficulty:'easy'},
-  {id:'sq2',bankId:'sample',text:'台灣的首都是？',opts:[{id:'A',text:'台北'},{id:'B',text:'台中'},{id:'C',text:'高雄'},{id:'D',text:'台南'}],ans:'A',difficulty:'easy'},
-  {id:'sq3',bankId:'sample',text:'2 × 8 = ?',opts:[{id:'A',text:'14'},{id:'B',text:'16'},{id:'C',text:'18'},{id:'D',text:'20'}],ans:'B',difficulty:'easy'},
-  {id:'sq4',bankId:'sample',text:'水的化學式是？',opts:[{id:'A',text:'CO2'},{id:'B',text:'H2O'},{id:'C',text:'O2'},{id:'D',text:'NaCl'}],ans:'B',difficulty:'medium'},
-  {id:'sq5',bankId:'sample',text:'地球是第幾顆行星？',opts:[{id:'A',text:'第一顆'},{id:'B',text:'第二顆'},{id:'C',text:'第三顆'},{id:'D',text:'第四顆'}],ans:'C',difficulty:'medium'},
-  {id:'sq6',bankId:'sample',text:'光速約為每秒幾公里？',opts:[{id:'A',text:'30萬'},{id:'B',text:'3萬'},{id:'C',text:'300萬'},{id:'D',text:'3000萬'}],ans:'A',difficulty:'hard'},
-];
-
+// 抽題用：從選定題庫撈題，緩存在 room.questionPool（每場遊戲緩存一次）
 async function refreshPickPool(room) {
-  const bankIds = room.selectedBankIds && room.selectedBankIds.size>0
-    ? [...room.selectedBankIds] : [...memBanks.keys()];
-  room.questionPool = [...memQuestions.values()].filter(q=>bankIds.includes(q.bankId));
-  if (room.questionPool.length===0) room.questionPool = [...SAMPLE_QUESTIONS];
-  console.log(`[QBank] Pool: ${room.questionPool.length} questions`);
+  try {
+    let rows;
+    if (room.selectedBankIds && room.selectedBankIds.size > 0) {
+      const ids = [...room.selectedBankIds];
+      const placeholders = ids.map(() => '?').join(',');
+      [rows] = await pool.query(
+        `SELECT * FROM questions WHERE bank_id IN (${placeholders})`, ids
+      );
+    } else {
+      [rows] = await pool.query('SELECT * FROM questions');
+    }
+    room.questionPool = rows.map(parseQ);
+    console.log(`[QBank] Pool refreshed: ${room.questionPool.length} questions`);
+  } catch(e) {
+    console.error('[QBank] Pool refresh error:', e.message);
+    room.questionPool = room.questionPool || [];
+  }
 }
 
 // ── 初始化（async 啟動）──────────────────────────
@@ -284,41 +410,69 @@ function newMapId() {
 }
 
 app.get('/api/maps', async (req, res) => {
-  res.json([...memMaps.values()].map(({data,...m})=>m).sort((a,b)=>a.createdAt-b.createdAt));
+  try {
+    const [rows] = await pool.query(
+      'SELECT id,name,type,cols,rows,tile_size,auto_fill_bots,created_at,updated_at FROM maps ORDER BY created_at ASC'
+    );
+    res.json(rows.map(r => ({
+      id:r.id, name:r.name, type:r.type,
+      cols:r.cols, rows:r.rows, tileSize:r.tile_size,
+      autoFillBots:!!r.auto_fill_bots,
+      createdAt:r.created_at, updatedAt:r.updated_at,
+    })));
+  } catch(e) { res.status(500).json({ error:e.message }); }
 });
 
 app.get('/api/maps/:id', async (req, res) => {
-  const m=memMaps.get(req.params.id);
-  if(!m) return res.status(404).json({error:'地圖不存在'});
-  res.json(m);
+  try {
+    const [[row]] = await pool.query('SELECT * FROM maps WHERE id=?', [req.params.id]);
+    if (!row) return res.status(404).json({ error:'地圖不存在' });
+    const data = typeof row.data==='string' ? JSON.parse(row.data) : row.data;
+    res.json({ id:row.id, name:row.name, type:row.type, cols:row.cols, rows:row.rows,
+      tileSize:row.tile_size, autoFillBots:!!row.auto_fill_bots, data,
+      createdAt:row.created_at, updatedAt:row.updated_at });
+  } catch(e) { res.status(500).json({ error:e.message }); }
 });
 
 app.post('/api/maps', async (req, res) => {
   const { name,type,cols,rows,tileSize,autoFillBots,data } = req.body;
-  if (!name||!name.trim()) return res.status(400).json({error:'地圖名稱不可空白'});
+  if (!name||!name.trim()) return res.status(400).json({ error:'地圖名稱不可空白' });
   const id=newMapId(), now=Date.now();
-  const m={id,name:name.trim(),type:type||'room',cols:cols||40,rows:rows||30,
-    tileSize:tileSize||32,autoFillBots:autoFillBots!==false,data:data||{},createdAt:now,updatedAt:now};
-  memMaps.set(id,m);
-  res.status(201).json({id,name:m.name,type:m.type,createdAt:now});
+  try {
+    await pool.query(
+      'INSERT INTO maps (id,name,type,cols,rows,tile_size,data,auto_fill_bots,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)',
+      [id,name.trim(),type||'room',cols||40,rows||30,tileSize||32,
+       JSON.stringify(data||{}),autoFillBots?1:0,now,now]);
+    console.log('[Maps] Created:', name);
+    res.status(201).json({ id, name:name.trim(), type:type||'room', createdAt:now });
+  } catch(e) { res.status(500).json({ error:e.message }); }
 });
 
 app.put('/api/maps/:id', async (req, res) => {
   const { name,type,cols,rows,tileSize,autoFillBots,data } = req.body;
-  const ex=memMaps.get(req.params.id);
-  if(!ex) return res.status(404).json({error:'地圖不存在'});
   const now=Date.now();
-  const m={...ex,name:name||'未命名',type:type||'room',cols:cols||40,rows:rows||30,
-    tileSize:tileSize||32,autoFillBots:autoFillBots!==false,data:data||{},updatedAt:now};
-  memMaps.set(req.params.id,m); mapCache.delete(req.params.id);
-  res.json({id:req.params.id,name,updatedAt:now});
+  try {
+    const [[ex]] = await pool.query('SELECT id FROM maps WHERE id=?', [req.params.id]);
+    if (!ex) return res.status(404).json({ error:'地圖不存在' });
+    await pool.query(
+      'UPDATE maps SET name=?,type=?,cols=?,rows=?,tile_size=?,data=?,auto_fill_bots=?,updated_at=? WHERE id=?',
+      [name||'未命名',type||'room',cols||40,rows||30,tileSize||32,
+       JSON.stringify(data||{}),autoFillBots?1:0,now,req.params.id]);
+    mapCache.delete(req.params.id);
+    console.log('[Maps] Updated:', name);
+    res.json({ id:req.params.id, name, updatedAt:now });
+  } catch(e) { res.status(500).json({ error:e.message }); }
 });
 
 app.delete('/api/maps/:id', async (req, res) => {
-  const ex=memMaps.get(req.params.id);
-  if(!ex) return res.status(404).json({error:'地圖不存在'});
-  memMaps.delete(req.params.id); mapCache.delete(req.params.id);
-  res.json({deleted:req.params.id});
+  try {
+    const [[ex]] = await pool.query('SELECT id,name FROM maps WHERE id=?', [req.params.id]);
+    if (!ex) return res.status(404).json({ error:'地圖不存在' });
+    await pool.query('DELETE FROM maps WHERE id=?', [req.params.id]);
+    mapCache.delete(req.params.id);
+    console.log('[Maps] Deleted:', ex.name);
+    res.json({ deleted:req.params.id });
+  } catch(e) { res.status(500).json({ error:e.message }); }
 });
 
 // Map cache & helpers
@@ -326,8 +480,14 @@ const mapCache = new Map();
 
 async function getMapCached(mapId) {
   if (mapCache.has(mapId)) return mapCache.get(mapId);
-  const m = memMaps.get(mapId); if (!m) return null;
-  mapCache.set(mapId, m); return m;
+  const [[row]] = await pool.query('SELECT * FROM maps WHERE id=?', [mapId]);
+  if (!row) return null;
+  const mapObj = { id:row.id, name:row.name, type:row.type,
+    cols:row.cols, rows:row.rows, tileSize:row.tile_size,
+    autoFillBots:!!row.auto_fill_bots,
+    data: typeof row.data==='string' ? JSON.parse(row.data) : row.data };
+  mapCache.set(mapId, mapObj);
+  return mapObj;
 }
 
 function getMapSpawnPoints(mapObj) {
@@ -940,78 +1100,225 @@ io.on('connection', socket => {
     });
 
     // ── QUESTION BANK CRUD (MySQL async) ─────────
-    // ── 題庫（記憶體版）─────────────────────────────
     socket.on('qbank:get_all', async () => {
-      socket.emit('qbank:list', await getAllBanksInfo());
-    });
-    socket.on('qbank:get_bank', async ({ bankId }) => {
-      const b = await getBankDetail(bankId);
-      if (b) socket.emit('qbank:bank_detail', b);
-    });
-    socket.on('qbank:create_bank', async ({ name, schoolYear, grade, subject, chapter, description }) => {
-      const id=memId(), now=Date.now();
-      const b={id,name:name||'新題庫',schoolYear:schoolYear||'',grade:grade||'',
-        subject:subject||'',chapter:chapter||'',description:description||'',createdAt:now,questionCount:0};
-      memBanks.set(id,b);
-      socket.emit('qbank:bank_created',b);
-      socket.emit('qbank:list', await getAllBanksInfo());
-    });
-    socket.on('qbank:update_bank', async ({ bankId, name, schoolYear, grade, subject, chapter, description }) => {
-      const b=memBanks.get(bankId); if(!b) return;
-      Object.assign(b,{name,schoolYear,grade,subject,chapter,description});
-      socket.emit('qbank:bank_updated',b);
-      socket.emit('qbank:list', await getAllBanksInfo());
-    });
-    socket.on('qbank:delete_bank', async ({ bankId }) => {
-      memBanks.delete(bankId);
-      for(const [qid,q] of memQuestions){ if(q.bankId===bankId) memQuestions.delete(qid); }
-      socket.emit('qbank:bank_deleted',{bankId});
-      socket.emit('qbank:list', await getAllBanksInfo());
-    });
-    socket.on('qbank:add_question', async ({ bankId, text, opts, ans, difficulty, tags }) => {
-      const id=memId(), now=Date.now();
-      const q={id,bankId,text,opts:opts||[],ans,difficulty:difficulty||'medium',tags:tags||'',createdAt:now};
-      memQuestions.set(id,q);
-      socket.emit('qbank:question_added',q);
-      socket.emit('qbank:bank_detail', await getBankDetail(bankId));
-    });
-    socket.on('qbank:update_question', async ({ questionId, text, opts, ans, difficulty, tags }) => {
-      const q=memQuestions.get(questionId); if(!q) return;
-      Object.assign(q,{text,opts,ans,difficulty,tags});
-      socket.emit('qbank:question_updated',q);
-      socket.emit('qbank:bank_detail', await getBankDetail(q.bankId));
-    });
-    socket.on('qbank:delete_question', async ({ questionId }) => {
-      const q=memQuestions.get(questionId); if(!q) return;
-      const bankId=q.bankId; memQuestions.delete(questionId);
-      socket.emit('qbank:question_deleted',{questionId});
-      socket.emit('qbank:bank_detail', await getBankDetail(bankId));
-    });
-    socket.on('qbank:import_questions', async ({ bankId, questions }) => {
-      let added=0;
-      for(const q of (questions||[])){
-        const id=memId();
-        memQuestions.set(id,{id,bankId,text:q.text||'',opts:q.opts||[],
-          ans:q.ans||'A',difficulty:q.difficulty||'medium',tags:q.tags||'',createdAt:Date.now()});
-        added++;
-      }
-      socket.emit('qbank:import_result',{success:true,added});
-      socket.emit('qbank:bank_detail', await getBankDetail(bankId));
-    });
-    socket.on('qbank:set_room_banks', async ({ roomId, bankIds }) => {
-      const room=rooms.get(roomId||teacherRoom); if(!room) return;
-      room.selectedBankIds=new Set(bankIds||[]);
-      await refreshPickPool(room);
-      socket.emit('qbank:room_banks_updated',{roomId:room.id,bankIds:[...room.selectedBankIds]});
-    });
-    socket.on('qbank:get_room_banks', async ({ roomId }) => {
-      const room=rooms.get(roomId||teacherRoom);
-      socket.emit('qbank:room_banks_updated',{roomId,bankIds:room?[...room.selectedBankIds]:[]});
+      try {
+        socket.emit('qbank:list', await getAllBanksInfo());
+      } catch(e) { socket.emit('qbank:error', { msg: e.message }); }
     });
 
+    socket.on('qbank:get_bank', async ({ bankId }) => {
+      try {
+        const detail = await getBankDetail(bankId);
+        if (!detail) { socket.emit('qbank:error', { msg: '找不到題庫' }); return; }
+        socket.emit('qbank:bank_detail', detail);
+      } catch(e) { socket.emit('qbank:error', { msg: e.message }); }
+    });
+
+    socket.on('qbank:create_bank', async ({ name, schoolYear, grade, subject, chapter, description }) => {
+      if (!name || !name.trim()) { socket.emit('qbank:error', { msg: '題庫名稱不可空白' }); return; }
+      const id = newId('bank_');
+      try {
+        await pool.query(
+          `INSERT INTO banks (id,name,school_year,grade,subject,chapter,description,created_at)
+           VALUES (?,?,?,?,?,?,?,?)`,
+          [id, name.trim(),
+           String(schoolYear||'').trim(), String(grade||'').trim(),
+           String(subject||'').trim(),    String(chapter||'').trim(),
+           String(description||'').trim(), Date.now()]
+        );
+        console.log(`[QBank] Created: ${name}`);
+        io.emit('qbank:list', await getAllBanksInfo());
+        socket.emit('qbank:bank_created', serializeBank(
+          { id, name: name.trim(), school_year: String(schoolYear||''), grade: String(grade||''),
+            subject: String(subject||''), chapter: String(chapter||''),
+            description: String(description||''), created_at: Date.now(), question_count: 0 }, null
+        ));
+      } catch(e) { socket.emit('qbank:error', { msg: '儲存失敗：' + e.message }); }
+    });
+
+    socket.on('qbank:update_bank', async ({ bankId, name, schoolYear, grade, subject, chapter, description }) => {
+      try {
+        const [[bank]] = await pool.query('SELECT * FROM banks WHERE id = ?', [bankId]);
+        if (!bank) { socket.emit('qbank:error', { msg: '找不到題庫' }); return; }
+        await pool.query(
+          `UPDATE banks SET name=?,school_year=?,grade=?,subject=?,chapter=?,description=? WHERE id=?`,
+          [
+            name        !== undefined ? name.trim()              : bank.name,
+            schoolYear  !== undefined ? String(schoolYear).trim(): bank.school_year,
+            grade       !== undefined ? String(grade).trim()     : bank.grade,
+            subject     !== undefined ? String(subject).trim()   : bank.subject,
+            chapter     !== undefined ? String(chapter).trim()   : bank.chapter,
+            description !== undefined ? String(description).trim(): bank.description,
+            bankId,
+          ]
+        );
+        io.emit('qbank:list', await getAllBanksInfo());
+        const detail = await getBankDetail(bankId);
+        socket.emit('qbank:bank_updated', serializeBank(
+          { ...detail, school_year: detail.schoolYear, created_at: detail.createdAt,
+            question_count: detail.questionCount }, null
+        ));
+      } catch(e) { socket.emit('qbank:error', { msg: '更新失敗：' + e.message }); }
+    });
+
+    socket.on('qbank:delete_bank', async ({ bankId }) => {
+      try {
+        const [[bank]] = await pool.query('SELECT id FROM banks WHERE id = ?', [bankId]);
+        if (!bank) { socket.emit('qbank:error', { msg: '找不到題庫' }); return; }
+        await pool.query('DELETE FROM banks WHERE id = ?', [bankId]); // CASCADE 刪 questions
+        rooms.forEach(room => room.selectedBankIds.delete(bankId));
+        io.emit('qbank:list', await getAllBanksInfo());
+        socket.emit('qbank:bank_deleted', { bankId });
+      } catch(e) { socket.emit('qbank:error', { msg: '刪除失敗：' + e.message }); }
+    });
+
+    socket.on('qbank:add_question', async ({ bankId, text, opts, ans, difficulty, tags }) => {
+      if (!text || !text.trim())                   { socket.emit('qbank:error', { msg: '題目不可空白' }); return; }
+      if (!Array.isArray(opts) || opts.length < 2) { socket.emit('qbank:error', { msg: '至少需要 2 個選項' }); return; }
+      if (!opts.some(o => o.id === ans))           { socket.emit('qbank:error', { msg: '正確答案必須對應選項 ID' }); return; }
+      const qid = newId('q_');
+      const cleanOpts = opts.map((o,i) => ({ id: o.id||['a','b','c','d'][i], text: String(o.text||'').trim() }));
+      try {
+        const [[bankRow]] = await pool.query('SELECT id FROM banks WHERE id = ?', [bankId]);
+        if (!bankRow) { socket.emit('qbank:error', { msg: '找不到題庫' }); return; }
+        await pool.query(
+          `INSERT INTO questions (id,bank_id,text,opts,ans,difficulty,tags,created_at) VALUES (?,?,?,?,?,?,?,?)`,
+          [qid, bankId, text.trim(), JSON.stringify(cleanOpts), String(ans), difficulty||'medium', String(tags||'').trim(), Date.now()]
+        );
+        const [[qrow]] = await pool.query('SELECT * FROM questions WHERE id = ?', [qid]);
+        const [[{ c }]] = await pool.query('SELECT COUNT(*) AS c FROM questions WHERE bank_id = ?', [bankId]);
+        console.log(`[QBank] Q added to ${bankId}: ${text.slice(0,30)}`);
+        socket.emit('qbank:question_added', { bankId, question: parseQ(qrow), questionCount: Number(c) });
+      } catch(e) { socket.emit('qbank:error', { msg: '儲存失敗：' + e.message }); }
+    });
+
+    socket.on('qbank:update_question', async ({ bankId, questionId, text, opts, ans, difficulty, tags }) => {
+      try {
+        const [[row]] = await pool.query('SELECT * FROM questions WHERE id = ?', [questionId]);
+        if (!row) { socket.emit('qbank:error', { msg: '找不到題目' }); return; }
+        const cleanOpts = opts
+          ? opts.map((o,i) => ({ id: o.id||['a','b','c','d'][i], text: String(o.text||'').trim() }))
+          : (typeof row.opts === 'string' ? JSON.parse(row.opts) : row.opts);
+        await pool.query(
+          `UPDATE questions SET text=?,opts=?,ans=?,difficulty=?,tags=? WHERE id=?`,
+          [
+            text        ? text.trim()        : row.text,
+            JSON.stringify(cleanOpts),
+            ans         ? String(ans)         : row.ans,
+            difficulty  ? difficulty           : row.difficulty,
+            tags !== undefined ? String(tags).trim() : row.tags,
+            questionId,
+          ]
+        );
+        const [[updated]] = await pool.query('SELECT * FROM questions WHERE id = ?', [questionId]);
+        socket.emit('qbank:question_updated', { bankId, question: parseQ(updated) });
+      } catch(e) { socket.emit('qbank:error', { msg: '更新失敗：' + e.message }); }
+    });
+
+    socket.on('qbank:delete_question', async ({ bankId, questionId }) => {
+      try {
+        await pool.query('DELETE FROM questions WHERE id = ?', [questionId]);
+        const [[{ c }]] = await pool.query('SELECT COUNT(*) AS c FROM questions WHERE bank_id = ?', [bankId]);
+        socket.emit('qbank:question_deleted', { bankId, questionId, questionCount: Number(c) });
+      } catch(e) { socket.emit('qbank:error', { msg: '刪除失敗：' + e.message }); }
+    });
+
+    // ── 批次匯入試題（CSV/Excel 解析後由 client 傳來）──
+    socket.on('qbank:import_questions', async ({ bankId, questions }) => {
+      if (!Array.isArray(questions) || questions.length === 0) { socket.emit('qbank:error', { msg: '無有效試題資料' }); return; }
+      if (questions.length > 500) { socket.emit('qbank:error', { msg: '單次最多匯入 500 題' }); return; }
+      try {
+        const [[bankRow]] = await pool.query('SELECT id FROM banks WHERE id = ?', [bankId]);
+        if (!bankRow) { socket.emit('qbank:error', { msg: '找不到題庫' }); return; }
+      } catch(e) { socket.emit('qbank:error', { msg: e.message }); return; }
+
+      const VALID_DIFF = new Set(['easy','medium','hard']);
+      const errors = [];
+      const valid  = [];
+      const now    = Date.now();
+
+      questions.forEach((q, i) => {
+        const rowNum = i + 1;
+        if (!q.text || !q.text.trim()) { errors.push(`第 ${rowNum} 題：題目不可空白`); return; }
+        if (!Array.isArray(q.opts) || q.opts.filter(o => o.text.trim()).length < 2) { errors.push(`第 ${rowNum} 題：至少需要 2 個非空選項`); return; }
+        const ansLower = String(q.ans||'').toLowerCase();
+        if (!q.opts.map(o=>o.id.toLowerCase()).includes(ansLower)) { errors.push(`第 ${rowNum} 題「${q.text.slice(0,20)}」：答案「${q.ans}」不在選項中`); return; }
+        valid.push([
+          newId('q_'), bankId, q.text.trim(),
+          JSON.stringify(q.opts.map((o,idx) => ({ id: o.id||['a','b','c','d'][idx], text: String(o.text||'').trim() }))),
+          ansLower, VALID_DIFF.has(q.difficulty) ? q.difficulty : 'medium',
+          String(q.tags||'').trim(), now,
+        ]);
+      });
+
+      if (valid.length === 0) { socket.emit('qbank:import_result', { bankId, imported: 0, errors }); return; }
+
+      // MySQL multi-row INSERT transaction
+      const conn = await pool.getConnection();
+      try {
+        await conn.beginTransaction();
+        await conn.query(
+          `INSERT INTO questions (id,bank_id,text,opts,ans,difficulty,tags,created_at) VALUES ?`, [valid]
+        );
+        await conn.commit();
+        const [[{ c }]] = await conn.query('SELECT COUNT(*) AS c FROM questions WHERE bank_id = ?', [bankId]);
+        console.log(`[QBank] Imported ${valid.length} questions to ${bankId}`);
+        socket.emit('qbank:import_result', { bankId, imported: valid.length, errors, questionCount: Number(c) });
+      } catch(e) {
+        await conn.rollback();
+        socket.emit('qbank:error', { msg: '批次寫入失敗：' + e.message });
+      } finally {
+        conn.release();
+      }
+    });
+
+    // ── 設定房間使用的題庫（複選）──
+    socket.on('qbank:set_room_banks', async ({ roomId, bankIds }) => {
+      const room = rooms.get(roomId || teacherRoom);
+      if (!room) { socket.emit('qbank:error', { msg: '找不到房間' }); return; }
+      room.selectedBankIds = new Set(Array.isArray(bankIds) ? bankIds : []);
+      try {
+        let total = 0;
+        if (room.selectedBankIds.size > 0) {
+          const ids = [...room.selectedBankIds];
+          const [[{ c }]] = await pool.query(
+            `SELECT COUNT(*) AS c FROM questions WHERE bank_id IN (${ids.map(()=>'?').join(',')})`, ids
+          );
+          total = Number(c);
+        } else {
+          const [[{ c }]] = await pool.query('SELECT COUNT(*) AS c FROM questions');
+          total = Number(c);
+        }
+        // 同時刷新題目池
+        await refreshPickPool(room);
+        toTeachers(room.id, 'qbank:room_banks_updated', { bankIds: [...room.selectedBankIds], totalQuestions: total });
+        console.log(`[QBank] Room ${room.id} banks: ${[...room.selectedBankIds].join(',') || '(all)'}`);
+      } catch(e) { socket.emit('qbank:error', { msg: e.message }); }
+    });
+
+    socket.on('qbank:get_room_banks', async ({ roomId }) => {
+      const room = rooms.get(roomId || teacherRoom);
+      const bankIds = room ? [...room.selectedBankIds] : [];
+      try {
+        let total = 0;
+        if (bankIds.length > 0) {
+          const [[{ c }]] = await pool.query(
+            `SELECT COUNT(*) AS c FROM questions WHERE bank_id IN (${bankIds.map(()=>'?').join(',')})`, bankIds
+          );
+          total = Number(c);
+        } else {
+          const [[{ c }]] = await pool.query('SELECT COUNT(*) AS c FROM questions');
+          total = Number(c);
+        }
+        socket.emit('qbank:room_banks_updated', { bankIds, totalQuestions: total });
+      } catch(e) { socket.emit('qbank:error', { msg: e.message }); }
+    });
+
+
+ 
     // ── Bot 設定 ──────────────────────────────────────────
     socket.on('teacher:bot_settings', ({ roomId, botEnabled, botCount }) => {
-      const room = getRoom(roomId || teacherRoom);
+      const room = getRoom(roomId || teacherRoom);  // getRoom 會自動建立房間
       if (!room) { socket.emit('bot:error', { msg: '找不到房間' }); return; }
       if (room.gameStarted) { socket.emit('bot:error', { msg: '遊戲進行中，無法變更 Bot 設定' }); return; }
       room.botEnabled = !!botEnabled;
@@ -1020,16 +1327,16 @@ io.on('connection', socket => {
       console.log(`[Bot] room=${room.id} botEnabled=${room.botEnabled} botCount=${room.botCount}`);
       toTeachers(room.id, 'bot:settings_updated', info);
       socket.emit('bot:settings_updated', info);  // 也回傳給發送者
-      socket.emit('bot:settings_updated', info);
+      console.log('[Bot] Settings:', JSON.stringify(info));
     });
     socket.on('teacher:get_bot_settings', ({ roomId }) => {
-      const room = getRoom(roomId || teacherRoom);
+      const room = getRoom(roomId || teacherRoom);  // getRoom 會自動建立房間
       socket.emit('bot:settings_updated', {
         botEnabled: room ? room.botEnabled : true,
         botCount:   room ? room.botCount   : null,
       });
     });
-
+   // ── 地圖選擇 ──────────────────────────────
     socket.on('map:set_room_map', async ({ roomId, mapId }) => {
       const room = rooms.get(roomId || teacherRoom);
       if (!room) { socket.emit('map:error',{ msg:'找不到房間' }); return; }
@@ -1205,17 +1512,46 @@ setInterval(()=>{
 const PORT = process.env.PORT || 3000;
 
 // ── 啟動前檢查必要環境變數 ────────────────────
-// NO-DB: 跳過環境變數檢查
+// 接受 Zeabur 原生變數 或 本地 DB_* 變數
+const hasDB = (process.env.MYSQL_HOST || process.env.DB_HOST) &&
+              (process.env.MYSQL_USERNAME || process.env.DB_USER) &&
+              (process.env.MYSQL_PASSWORD || process.env.DB_PASSWORD) &&
+              (process.env.MYSQL_DATABASE || process.env.DB_NAME);
+const missingEnv = hasDB ? [] : ['DB_HOST (或 MYSQL_HOST)', 'DB_USER (或 MYSQL_USERNAME)', 'DB_PASSWORD (或 MYSQL_PASSWORD)', 'DB_NAME (或 MYSQL_DATABASE)'];
+if (missingEnv.length > 0) {
+  console.error('╔══════════════════════════════════════════════╗');
+  console.error('║  ❌  缺少必要的環境變數，請在 Zeabur        ║');
+  console.error('║      Variables 頁籤設定以下變數：           ║');
+  missingEnv.forEach(k => console.error('║  →  ' + k.padEnd(38) + '║'));
+  console.error('╚══════════════════════════════════════════════╝');
+  process.exit(1);
+}
 
 // 先連 MySQL 建表，再啟動 HTTP server（含重試機制）
-// NO-DB: 直接啟動
-server.listen(PORT, () => {
-  console.log(`
-╔════════════════════════════════════════════╗
-║  🎮  BrainRoyale  Ready!  [NO-DB MODE]     ║
-║  學生  →  http://localhost:${PORT}            ║
-║  教師  →  http://localhost:${PORT}/teacher    ║
-║  地圖  →  http://localhost:${PORT}/map-editor ║
-║  ⚠  記憶體模式：重啟後資料清空             ║
-╚════════════════════════════════════════════╝`);
-});
+async function startServer(retries = 12, delay = 10000) {  // 等最多 2 分鐘讓 MySQL 啟動
+  for (let i = 1; i <= retries; i++) {
+    try {
+      await initDB();
+      server.listen(PORT, () => {
+        console.log(`
+╔═══════════════════════════════════════════╗
+║  🎮  BrainRoyale Server  Ready!           ║
+║  學生  →  http://localhost:${PORT}           ║
+║  教師  →  http://localhost:${PORT}/teacher   ║
+║  地圖  →  http://localhost:${PORT}/map-editor║
+╚═══════════════════════════════════════════╝`);
+      });
+      return; // 成功，結束重試
+    } catch(err) {
+      console.error(`[MySQL] 連線失敗 (${i}/${retries})：${err.message}`);
+      if (i === retries) {
+        console.error('[MySQL] 已達最大重試次數，請確認環境變數設定正確。');
+        process.exit(1);
+      }
+      console.log(`[MySQL] ${delay/1000} 秒後重試... (${i}/${retries})`);
+      await new Promise(r => setTimeout(r, delay));
+    }
+  }
+}
+
+startServer();
