@@ -157,8 +157,8 @@ async function initDB() {
         id             VARCHAR(40)  PRIMARY KEY,
         name           VARCHAR(100) NOT NULL,
         type           VARCHAR(20)  NOT NULL DEFAULT 'room',
-        cols           INT          NOT NULL DEFAULT 40,
-        rows           INT          NOT NULL DEFAULT 30,
+        \`cols\`         INT          NOT NULL DEFAULT 40,
+        \`rows\`         INT          NOT NULL DEFAULT 30,
         tile_size      INT          NOT NULL DEFAULT 32,
         data           JSON         NOT NULL,
         auto_fill_bots TINYINT      NOT NULL DEFAULT 1,
@@ -412,7 +412,7 @@ function newMapId() {
 app.get('/api/maps', async (req, res) => {
   try {
     const [rows] = await pool.query(
-      'SELECT id,name,type,cols,rows,tile_size,auto_fill_bots,created_at,updated_at FROM maps ORDER BY created_at ASC'
+      'SELECT id,name,type,`cols`,`rows`,tile_size,auto_fill_bots,created_at,updated_at FROM maps ORDER BY created_at ASC'
     );
     res.json(rows.map(r => ({
       id:r.id, name:r.name, type:r.type,
@@ -440,7 +440,7 @@ app.post('/api/maps', async (req, res) => {
   const id=newMapId(), now=Date.now();
   try {
     await pool.query(
-      'INSERT INTO maps (id,name,type,cols,rows,tile_size,data,auto_fill_bots,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)',
+      'INSERT INTO maps (id,name,type,`cols`,`rows`,tile_size,data,auto_fill_bots,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)',
       [id,name.trim(),type||'room',cols||40,rows||30,tileSize||32,
        JSON.stringify(data||{}),autoFillBots?1:0,now,now]);
     console.log('[Maps] Created:', name);
@@ -455,7 +455,7 @@ app.put('/api/maps/:id', async (req, res) => {
     const [[ex]] = await pool.query('SELECT id FROM maps WHERE id=?', [req.params.id]);
     if (!ex) return res.status(404).json({ error:'地圖不存在' });
     await pool.query(
-      'UPDATE maps SET name=?,type=?,cols=?,rows=?,tile_size=?,data=?,auto_fill_bots=?,updated_at=? WHERE id=?',
+      'UPDATE maps SET name=?,type=?,`cols`=?,`rows`=?,tile_size=?,data=?,auto_fill_bots=?,updated_at=? WHERE id=?',
       [name||'未命名',type||'room',cols||40,rows||30,tileSize||32,
        JSON.stringify(data||{}),autoFillBots?1:0,now,req.params.id]);
     mapCache.delete(req.params.id);
