@@ -387,6 +387,23 @@ table.import-tbl tr.row-ok td  { }
 <div id="side">
   <div class="sec">
     <div class="sec-lbl">Game Controls</div>
+    <div id="ready-panel" style="background:var(--bg2);border:1px solid var(--borderL);border-radius:var(--r);padding:8px 10px;margin-bottom:10px">
+      <div style="font-family:var(--mono);font-size:10px;color:var(--muted);letter-spacing:1px;margin-bottom:6px">開局就緒狀態</div>
+      <div style="display:flex;flex-direction:column;gap:4px">
+        <div style="display:flex;justify-content:space-between">
+          <span style="font-family:var(--mono);font-size:11px;color:var(--muted)">📚 題庫</span>
+          <span id="ready-qbank" style="font-family:var(--mono);font-size:11px;color:var(--amber)">載入中…</span>
+        </div>
+        <div style="display:flex;justify-content:space-between">
+          <span style="font-family:var(--mono);font-size:11px;color:var(--muted)">🗺 地圖</span>
+          <span id="ready-map" style="font-family:var(--mono);font-size:11px;color:#22c55e">✓ 預設地圖（無牆壁）</span>
+        </div>
+        <div style="display:flex;justify-content:space-between">
+          <span style="font-family:var(--mono);font-size:11px;color:var(--muted)">🤖 Bot</span>
+          <span id="ready-bot" style="font-family:var(--mono);font-size:11px;color:#22c55e">✓ 自動補滿至 30 人</span>
+        </div>
+      </div>
+    </div>
     <div style="margin-bottom:10px">
       <div class="sec-lbl" style="margin-bottom:6px">Bot 設定</div>
       <label style="display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:12px;color:var(--text);cursor:pointer;margin-bottom:8px">
@@ -777,7 +794,7 @@ function stopElapsed(){ clearInterval(elapsedTmr); }
 // ════════════════════════════════════════════════
 //  CONNECT
 // ════════════════════════════════════════════════
-function getRoomId(){ return document.getElementById('room-in').value.trim()||'room_001'; }
+function getRoomId(){ return teacherRoom || ''; }
 
 function createRoom(){
   if(conn){ if(!confirm('已有連線中的房間，確定要重新開設新房間？')) return; socket.disconnect(); conn=false; }
@@ -926,6 +943,8 @@ function attachSocketEvents(){
   socket.on('qbank:list', banks => {
     allBanks = banks;
     renderBankList();
+    const total = banks.reduce((s,b) => s+(b.questionCount||0), 0);
+    updateReadyPanel(total, 0);
   });
   socket.on('qbank:bank_detail', bank => {
     activeBankId = bank.id;
@@ -981,6 +1000,7 @@ function attachSocketEvents(){
     pendingBankIds = new Set(bankIds);
     updateRoomStatus(totalQuestions);
     renderBankList();
+    updateReadyPanel(totalQuestions || 0, bankIds.length);
   });
   socket.on('qbank:error', ({ msg }) => {
     toast('⚠️ '+msg);
@@ -1568,6 +1588,18 @@ function downloadTemplate(type) {
 renderMap();
 
 
+
+  function updateReadyPanel(totalQ, bankCount) {
+    const qEl = document.getElementById("ready-qbank");
+    if (!qEl) return;
+    if (totalQ === 0) {
+      qEl.textContent = "⚠ 尚無題目，請先匯入"; qEl.style.color = "#ef4444";
+    } else if (bankCount === 0) {
+      qEl.textContent = `✓ 全部題庫（${totalQ} 題）`; qEl.style.color = "#22c55e";
+    } else {
+      qEl.textContent = `✓ ${bankCount} 個題庫（${totalQ} 題）`; qEl.style.color = "#22c55e";
+    }
+  }
   // ── Bot 設定 ──────────────────────────────────────────────
   function updateBotSettings() {
     const botEnabled = document.getElementById('bot-enabled').checked;
@@ -1598,6 +1630,12 @@ renderMap();
     const rid = teacherRoom || getRoomId();
     socket.emit('teacher:bot_settings', { roomId: rid, botEnabled, botCount });
     console.log('[Bot] Sent settings:', { roomId: rid, botEnabled, botCount });
+    const bEl = document.getElementById('ready-bot');
+    if (bEl) {
+      if (!botEnabled) { bEl.textContent='停用（純人類對戰）'; bEl.style.color='var(--muted)'; }
+      else if (botCount===null) { bEl.textContent='✓ 自動補滿至 30 人'; bEl.style.color='#22c55e'; }
+      else { bEl.textContent=`✓ 固定 ${botCount} 隻`; bEl.style.color='#22c55e'; }
+    }
   }
   socket.on('bot:settings_updated', ({ botEnabled, botCount }) => {
     const cb  = document.getElementById('bot-enabled');
@@ -1631,6 +1669,11 @@ renderMap();
   }
 
   socket.on('map:room_map_updated', ({ mapId, mapName }) => {
+    const mEl = document.getElementById('ready-map');
+    if (mEl) {
+      mEl.textContent = mapId ? `✓ ${mapName||mapId}` : '✓ 預設地圖（無牆壁）';
+      mEl.style.color = '#22c55e';
+    }
     document.getElementById('map-status').textContent =
       mapId ? '已載入：' + mapName : '預設地圖（無牆壁）';
     // Sync select dropdown

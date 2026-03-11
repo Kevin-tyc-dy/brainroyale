@@ -1082,7 +1082,7 @@ io.on('connection', socket => {
     });
 
     socket.on('teacher:game_control', ({ action, roomId }) => {
-      const room = rooms.get(roomId);
+      const room = rooms.get(roomId) || rooms.get(teacherRoom);
       if(!room) return;
       switch(action){
         case 'start': startGame(room); break;
@@ -1092,7 +1092,7 @@ io.on('connection', socket => {
     });
 
     socket.on('teacher:force_shrink', ({ roomId }) => {
-      const room=rooms.get(roomId);
+      const room=rooms.get(roomId)||rooms.get(teacherRoom);
       if(room) forceShrink(room);
     });
 
