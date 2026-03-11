@@ -586,7 +586,7 @@ body {
 
     <div class="lobby-field-label">房間代碼</div>
     <input class="lobby-input" id="room-input" type="text"
-      placeholder="room_001" maxlength="20" spellcheck="false" value="room_001">
+      placeholder="輸入老師的 5 碼房間代碼" maxlength="20" spellcheck="false">
 
     <button class="lobby-btn" id="join-btn" onclick="joinGame()">進入房間</button>
 
@@ -773,7 +773,35 @@ function joinGame() {
     alert('無法連線至伺服器，請確認伺服器已啟動。');
   });
 
+  socket.on('error', ({ code, msg }) => {
+    document.getElementById('join-btn').disabled = false;
+    if (code === 'INVALID_ROOM') {
+      const inp = document.getElementById('room-input');
+      inp.style.borderColor = '#ef4444';
+      inp.style.boxShadow   = '0 0 0 2px rgba(239,68,68,0.3)';
+      setTimeout(() => { inp.style.borderColor=''; inp.style.boxShadow=''; }, 2000);
+      showRoomError('房間代碼無效，請向老師確認代碼。');
+    } else if (code === 'ROOM_FULL') {
+      showRoomError('房間已滿，無法加入。');
+    } else {
+      showRoomError(msg || '加入失敗，請重試。');
+    }
+    socket.disconnect();
+  });
+
   setupSocketEvents();
+}
+
+function showRoomError(msg) {
+  let el = document.getElementById('room-error-msg');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'room-error-msg';
+    el.style.cssText = 'color:#ef4444;font-size:12px;margin-top:6px;font-family:var(--mono,monospace);text-align:center';
+    document.getElementById('join-btn').insertAdjacentElement('afterend', el);
+  }
+  el.textContent = '⚠ ' + msg;
+  setTimeout(() => { el.textContent = ''; }, 4000);
 }
 
 function showWaiting() {

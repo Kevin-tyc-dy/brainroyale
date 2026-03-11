@@ -374,9 +374,9 @@ table.import-tbl tr.row-ok td  { }
   <div class="divider"></div>
   <div class="room-wrap">
     <span class="room-lbl">ROOM</span>
-    <input id="room-in" type="text" value="room_001" placeholder="room_001" maxlength="20" spellcheck="false">
+    <span id="room-code-display" style="font-family:var(--mono);font-size:18px;font-weight:700;color:var(--amber);letter-spacing:4px;min-width:80px">─────</span>
   </div>
-  <button class="btn-conn" onclick="connect()">Connect</button>
+  <button class="btn-conn" id="btn-create-room" onclick="createRoom()" style="background:#22c55e;border-color:#22c55e;color:#000;font-weight:700">＋ 開設房間</button>
   <div id="conn-status"><div class="sdot" id="sdot"></div><span id="stxt">OFFLINE</span></div>
   <div class="divider"></div>
   <div id="game-elapsed">──:──</div>
@@ -779,16 +779,40 @@ function stopElapsed(){ clearInterval(elapsedTmr); }
 // ════════════════════════════════════════════════
 function getRoomId(){ return document.getElementById('room-in').value.trim()||'room_001'; }
 
-function connect(){
-  if(socket){ socket.disconnect(); }
-  teacherRoom=getRoomId();
-  socket=io({ query:{ role:'teacher' } });
+function createRoom(){
+  if(conn){ if(!confirm('已有連線中的房間，確定要重新開設新房間？')) return; socket.disconnect(); conn=false; }
+  document.getElementById('btn-create-room').disabled = true;
+  document.getElementById('btn-create-room').textContent = '開設中…';
+  socket = io({ query:{ role:'teacher' } });
+  socket.on('connect', () => {
+    conn = true; setStatus('ok','ONLINE');
+    socket.emit('teacher:create_room');
+  });
+  socket.on('teacher:room_created', ({ roomId }) => {
+    teacherRoom = roomId;
+    document.getElementById('room-code-display').textContent = roomId;
+    document.getElementById('btn-create-room').textContent = '＋ 重新開設';
+    document.getElementById('btn-create-room').disabled = false;
+    loadMapList();
+    socket.emit('qbank:get_all');
+    socket.emit('qbank:get_room_banks', { roomId });
+    socket.emit('map:get_room_map', { roomId });
+    socket.emit('teacher:get_bot_settings', { roomId });
+    enableCtrl(true); syncBtns();
+  });
+  socket.on('connect_error', () => {
+    document.getElementById('btn-create-room').disabled = false;
+    document.getElementById('btn-create-room').textContent = '＋ 開設房間';
+    setStatus('err','OFFLINE');
+  });
+  attachSocketEvents();
+}
 
+function attachSocketEvents(){
+  // socket events 已在 createRoom() 裡初始化，這裡只掛其餘事件
+  // (保留供向下相容)
   socket.on('connect',()=>{
     conn=true; setStatus('ok','ONLINE');
-    socket.emit('teacher:join',{ roomId:teacherRoom });
-    socket.emit('qbank:get_all');
-    socket.emit('qbank:get_room_banks',{ roomId:teacherRoom });
     enableCtrl(true); syncBtns();
   });
   socket.on('disconnect',()=>{

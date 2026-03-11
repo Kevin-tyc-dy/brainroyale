@@ -527,6 +527,15 @@ const rooms = new Map();
 // teachers: Map<roomId, Set<socketId>>
 const teachers = new Map();
 
+// activeCodes: 老師正式開設的有效房間代碼
+const activeCodes = new Set();
+function genRoomCode() {
+  let code;
+  do { code = String(Math.floor(10000 + Math.random() * 90000)); }
+  while (activeCodes.has(code));
+  return code;
+}
+
 function getRoom(id) {
   if(!rooms.has(id)) {
     rooms.set(id, {
@@ -1042,8 +1051,21 @@ io.on('connection', socket => {
     console.log(`[Teacher] Connect: ${socket.id}`);
     let teacherRoom = null;
 
+    socket.on('teacher:create_room', () => {
+      const code = genRoomCode();
+      activeCodes.add(code);
+      getRoom(code);
+      teacherRoom = code;
+      socket.join(`teacher_${code}`);
+      if (!teachers.has(code)) teachers.set(code, new Set());
+      teachers.get(code).add(socket.id);
+      socket.emit('teacher:room_created', { roomId: code });
+      console.log(`[Room] Teacher created room: ${code}`);
+    });
+
     socket.on('teacher:join', ({ roomId }) => {
       teacherRoom = roomId;
+      activeCodes.add(roomId);
       socket.join(`teacher_${roomId}`);
       if(!teachers.has(roomId)) teachers.set(roomId,new Set());
       teachers.get(roomId).add(socket.id);
@@ -1362,6 +1384,11 @@ io.on('connection', socket => {
       if(teacherRoom){
         const s=teachers.get(teacherRoom);
         if(s) s.delete(socket.id);
+        // 若無其他老師監控此房間，移除有效代碼
+        if (!s || s.size === 0) {
+          activeCodes.delete(teacherRoom);
+          console.log(`[Room] Code ${teacherRoom} deactivated (no teacher)`);
+        }
       }
       console.log(`[Teacher] Disconnect: ${socket.id}`);
     });
@@ -1374,7 +1401,12 @@ io.on('connection', socket => {
 
   socket.on('player:join', ({ name, roomId }) => {
     const safe=String(name||'Player').slice(0,12).replace(/[<>&"]/g,'');
-    const room=getRoom(roomId||'default');
+    const rid = String(roomId||'').trim();
+    if (!activeCodes.has(rid)) {
+      socket.emit('error', { code: 'INVALID_ROOM', msg: '無效的房間代碼，請確認老師提供的代碼。' });
+      return;
+    }
+    const room=getRoom(rid);
 
     if(room.players.size>=CONFIG.MAX_PLAYERS){
       socket.emit('error',{ code:'ROOM_FULL' }); return;
