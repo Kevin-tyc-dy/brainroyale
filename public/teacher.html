@@ -1005,6 +1005,33 @@ function attachSocketEvents(){
   socket.on('qbank:error', ({ msg }) => {
     toast('⚠️ '+msg);
   });
+
+
+  // ── Bot / Map socket handlers ─────────────────────────
+  socket.on('bot:settings_updated', ({ botEnabled, botCount }) => {
+    const cb  = document.getElementById('bot-enabled');
+    const inp = document.getElementById('bot-count');
+    if (cb)  cb.checked = botEnabled;
+    if (inp) inp.value  = botCount !== null ? botCount : '';
+    updateBotSettings();
+  });
+  socket.on('bot:error', ({ msg }) => {
+    document.getElementById('bot-status').textContent = '⚠ ' + msg;
+  });
+  socket.on('map:room_map_updated', ({ mapId, mapName }) => {
+    const mEl = document.getElementById('ready-map');
+    if (mEl) {
+      mEl.textContent = mapId ? `✓ ${mapName||mapId}` : '✓ 預設地圖（無牆壁）';
+      mEl.style.color = '#22c55e';
+    }
+    document.getElementById('map-status').textContent =
+      mapId ? '已載入：' + mapName : '預設地圖（無牆壁）';
+    const sel = document.getElementById('map-select');
+    if (sel) sel.value = mapId || '';
+  });
+  socket.on('map:error', ({ msg }) => {
+    document.getElementById('map-status').textContent = '⚠ ' + msg;
+  });
 }
 
 // ════════════════════════════════════════════════
@@ -1637,53 +1664,28 @@ renderMap();
       else { bEl.textContent=`✓ 固定 ${botCount} 隻`; bEl.style.color='#22c55e'; }
     }
   }
-  socket.on('bot:settings_updated', ({ botEnabled, botCount }) => {
-    const cb  = document.getElementById('bot-enabled');
-    const inp = document.getElementById('bot-count');
-    if (cb)  cb.checked = botEnabled;
-    if (inp) inp.value  = botCount !== null ? botCount : '';
-    updateBotSettings();
-  });
-  socket.on('bot:error', ({ msg }) => {
-    document.getElementById('bot-status').textContent = '⚠ ' + msg;
-  });
-  // ── 地圖選擇 ──────────────────────────────────────────────
-  async function loadMapList() {
-    try {
-      const res = await fetch('/api/maps');
-      const maps = await res.json();
-      const sel = document.getElementById('map-select');
-      sel.innerHTML = '<option value="">── 預設地圖（無牆壁）──</option>';
-      maps.forEach(m => {
-        const opt = document.createElement('option');
-        opt.value = m.id;
-        opt.textContent = m.name + (m.type === 'main' ? '  🏆' : '');
-        sel.appendChild(opt);
-      });
-    } catch(e) { console.warn('[Map] loadMapList failed:', e.message); }
-  }
 
-  function applyMap() {
-    const mapId = document.getElementById('map-select').value || null;
-    socket.emit('map:set_room_map', { roomId: getRoomId(), mapId });
-  }
-
-  socket.on('map:room_map_updated', ({ mapId, mapName }) => {
-    const mEl = document.getElementById('ready-map');
-    if (mEl) {
-      mEl.textContent = mapId ? `✓ ${mapName||mapId}` : '✓ 預設地圖（無牆壁）';
-      mEl.style.color = '#22c55e';
-    }
-    document.getElementById('map-status').textContent =
-      mapId ? '已載入：' + mapName : '預設地圖（無牆壁）';
-    // Sync select dropdown
+async function loadMapList() {
+  try {
+    const res = await fetch('/api/maps');
+    const maps = await res.json();
     const sel = document.getElementById('map-select');
-    if (sel) sel.value = mapId || '';
-  });
+    sel.innerHTML = '<option value="">── 預設地圖（無牆壁）──</option>';
+    maps.forEach(m => {
+      const opt = document.createElement('option');
+      opt.value = m.id;
+      opt.textContent = m.name + (m.type === 'main' ? '  🏆' : '');
+      sel.appendChild(opt);
+    });
+  } catch(e) { console.warn('[Map] loadMapList failed:', e.message); }
+}
 
-  socket.on('map:error', ({ msg }) => {
-    document.getElementById('map-status').textContent = '⚠ ' + msg;
-  });
+function applyMap() {
+  if (!socket || !conn) { return; }
+  const mapId = document.getElementById('map-select').value || null;
+  socket.emit('map:set_room_map', { roomId: getRoomId(), mapId });
+}
+
 </script>
 </body>
 </html>

@@ -663,6 +663,17 @@ function startGame(room) {
   }
   console.log('[Game] '+room.id+' STARTED ('+room.players.size+'p)');
 
+  // 開局前廣播最新地圖給所有玩家（玩家加入後老師可能才套用地圖）
+  const mapPayload = room.mapObj ? {
+    cols:     room.mapObj.cols,
+    rows:     room.mapObj.rows,
+    tileSize: room.mapObj.tileSize,
+    walls:    room.mapObj.data?.walls   || [],
+    spawns:   room.mapObj.data?.spawns  || [],
+    portals:  room.mapObj.data?.portals || [],
+  } : null;
+  io.to(room.id).emit('map:load', { mapData: mapPayload });
+
   // Broadcast countdown to players
   io.to(room.id).emit('game:countdown');
   toTeachers(room.id,'teacher:game_state',{ state:'running' });

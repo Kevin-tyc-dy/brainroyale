@@ -862,6 +862,15 @@ function setupSocketEvents() {
     if (gameScene) gameScene.onWorldUpdate(players);
   });
 
+  socket.on('map:load', ({ mapData }) => {
+    if (mapData) {
+      state.mapData   = mapData;
+      state.wallTiles = new Set(mapData.walls.map(([gx,gy]) => gx+','+gy));
+    } else {
+      state.mapData = null; state.wallTiles = null;
+    }
+  });
+
   socket.on('game:countdown', () => {
     if (!state.gameStarted) {
       state.gameStarted = true;
