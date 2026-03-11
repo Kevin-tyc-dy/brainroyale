@@ -62,6 +62,72 @@ app.get('*/teacher',      sendTeacher);
 app.get('/map-editor',      (_, res) => res.sendFile(path.join(__dirname, 'public', 'map-editor.html')));
 app.get('/map-editor.html', (_, res) => res.sendFile(path.join(__dirname, 'public', 'map-editor.html')));
 app.use(express.json({ limit: '2mb' }));
+app.get('/api/maps', async (req, res) => {
+  try {
+    const [rows] = await pool.query(
+      'SELECT id,name,type,`cols`,`rows`,tile_size,auto_fill_bots,created_at,updated_at FROM maps ORDER BY created_at ASC'
+    );
+    res.json(rows.map(r => ({
+      id:r.id, name:r.name, type:r.type,
+      cols:r.cols, rows:r.rows, tileSize:r.tile_size,
+      autoFillBots:!!r.auto_fill_bots,
+      createdAt:r.created_at, updatedAt:r.updated_at,
+    })));
+  } catch(e) { res.status(500).json({ error:e.message }); }
+});
+
+app.get('/api/maps/:id', async (req, res) => {
+  try {
+    const [[row]] = await pool.query('SELECT * FROM maps WHERE id=?', [req.params.id]);
+    if (!row) return res.status(404).json({ error:'地圖不存在' });
+    const data = typeof row.data==='string' ? JSON.parse(row.data) : row.data;
+    res.json({ id:row.id, name:row.name, type:row.type, cols:row.cols, rows:row.rows,
+      tileSize:row.tile_size, autoFillBots:!!row.auto_fill_bots, data,
+      createdAt:row.created_at, updatedAt:row.updated_at });
+  } catch(e) { res.status(500).json({ error:e.message }); }
+});
+
+app.post('/api/maps', async (req, res) => {
+  const { name,type,cols,rows,tileSize,autoFillBots,data } = req.body;
+  if (!name||!name.trim()) return res.status(400).json({ error:'地圖名稱不可空白' });
+  const id=newMapId(), now=Date.now();
+  try {
+    await pool.query(
+      'INSERT INTO maps (id,name,type,`cols`,`rows`,tile_size,data,auto_fill_bots,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)',
+      [id,name.trim(),type||'room',cols||40,rows||30,tileSize||32,
+       JSON.stringify(data||{}),autoFillBots?1:0,now,now]);
+    console.log('[Maps] Created:', name);
+    res.status(201).json({ id, name:name.trim(), type:type||'room', createdAt:now });
+  } catch(e) { res.status(500).json({ error:e.message }); }
+});
+
+app.put('/api/maps/:id', async (req, res) => {
+  const { name,type,cols,rows,tileSize,autoFillBots,data } = req.body;
+  const now=Date.now();
+  try {
+    const [[ex]] = await pool.query('SELECT id FROM maps WHERE id=?', [req.params.id]);
+    if (!ex) return res.status(404).json({ error:'地圖不存在' });
+    await pool.query(
+      'UPDATE maps SET name=?,type=?,`cols`=?,`rows`=?,tile_size=?,data=?,auto_fill_bots=?,updated_at=? WHERE id=?',
+      [name||'未命名',type||'room',cols||40,rows||30,tileSize||32,
+       JSON.stringify(data||{}),autoFillBots?1:0,now,req.params.id]);
+    mapCache.delete(req.params.id);
+    console.log('[Maps] Updated:', name);
+    res.json({ id:req.params.id, name, updatedAt:now });
+  } catch(e) { res.status(500).json({ error:e.message }); }
+});
+
+app.delete('/api/maps/:id', async (req, res) => {
+  try {
+    const [[ex]] = await pool.query('SELECT id,name FROM maps WHERE id=?', [req.params.id]);
+    if (!ex) return res.status(404).json({ error:'地圖不存在' });
+    await pool.query('DELETE FROM maps WHERE id=?', [req.params.id]);
+    mapCache.delete(req.params.id);
+    console.log('[Maps] Deleted:', ex.name);
+    res.json({ deleted:req.params.id });
+  } catch(e) { res.status(500).json({ error:e.message }); }
+});
+
 app.get('*', sendIndex);
 
 // ═══════════════════════════════════════════════
@@ -409,71 +475,7 @@ function newMapId() {
   return 'map_' + Date.now().toString(36) + Math.random().toString(36).slice(2,5);
 }
 
-app.get('/api/maps', async (req, res) => {
-  try {
-    const [rows] = await pool.query(
-      'SELECT id,name,type,`cols`,`rows`,tile_size,auto_fill_bots,created_at,updated_at FROM maps ORDER BY created_at ASC'
-    );
-    res.json(rows.map(r => ({
-      id:r.id, name:r.name, type:r.type,
-      cols:r.cols, rows:r.rows, tileSize:r.tile_size,
-      autoFillBots:!!r.auto_fill_bots,
-      createdAt:r.created_at, updatedAt:r.updated_at,
-    })));
-  } catch(e) { res.status(500).json({ error:e.message }); }
-});
 
-app.get('/api/maps/:id', async (req, res) => {
-  try {
-    const [[row]] = await pool.query('SELECT * FROM maps WHERE id=?', [req.params.id]);
-    if (!row) return res.status(404).json({ error:'地圖不存在' });
-    const data = typeof row.data==='string' ? JSON.parse(row.data) : row.data;
-    res.json({ id:row.id, name:row.name, type:row.type, cols:row.cols, rows:row.rows,
-      tileSize:row.tile_size, autoFillBots:!!row.auto_fill_bots, data,
-      createdAt:row.created_at, updatedAt:row.updated_at });
-  } catch(e) { res.status(500).json({ error:e.message }); }
-});
-
-app.post('/api/maps', async (req, res) => {
-  const { name,type,cols,rows,tileSize,autoFillBots,data } = req.body;
-  if (!name||!name.trim()) return res.status(400).json({ error:'地圖名稱不可空白' });
-  const id=newMapId(), now=Date.now();
-  try {
-    await pool.query(
-      'INSERT INTO maps (id,name,type,`cols`,`rows`,tile_size,data,auto_fill_bots,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)',
-      [id,name.trim(),type||'room',cols||40,rows||30,tileSize||32,
-       JSON.stringify(data||{}),autoFillBots?1:0,now,now]);
-    console.log('[Maps] Created:', name);
-    res.status(201).json({ id, name:name.trim(), type:type||'room', createdAt:now });
-  } catch(e) { res.status(500).json({ error:e.message }); }
-});
-
-app.put('/api/maps/:id', async (req, res) => {
-  const { name,type,cols,rows,tileSize,autoFillBots,data } = req.body;
-  const now=Date.now();
-  try {
-    const [[ex]] = await pool.query('SELECT id FROM maps WHERE id=?', [req.params.id]);
-    if (!ex) return res.status(404).json({ error:'地圖不存在' });
-    await pool.query(
-      'UPDATE maps SET name=?,type=?,`cols`=?,`rows`=?,tile_size=?,data=?,auto_fill_bots=?,updated_at=? WHERE id=?',
-      [name||'未命名',type||'room',cols||40,rows||30,tileSize||32,
-       JSON.stringify(data||{}),autoFillBots?1:0,now,req.params.id]);
-    mapCache.delete(req.params.id);
-    console.log('[Maps] Updated:', name);
-    res.json({ id:req.params.id, name, updatedAt:now });
-  } catch(e) { res.status(500).json({ error:e.message }); }
-});
-
-app.delete('/api/maps/:id', async (req, res) => {
-  try {
-    const [[ex]] = await pool.query('SELECT id,name FROM maps WHERE id=?', [req.params.id]);
-    if (!ex) return res.status(404).json({ error:'地圖不存在' });
-    await pool.query('DELETE FROM maps WHERE id=?', [req.params.id]);
-    mapCache.delete(req.params.id);
-    console.log('[Maps] Deleted:', ex.name);
-    res.json({ deleted:req.params.id });
-  } catch(e) { res.status(500).json({ error:e.message }); }
-});
 
 // Map cache & helpers
 const mapCache = new Map();

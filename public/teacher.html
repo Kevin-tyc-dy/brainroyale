@@ -433,9 +433,9 @@ table.import-tbl tr.row-ok td  { }
   </div>
   <div class="sec">
     <div class="sec-lbl">Map / 地圖</div>
-    <select id="map-select" style="width:100%;font-family:var(--mono);font-size:12px;background:var(--bg2);border:1px solid var(--borderL);color:var(--text);padding:6px 8px;border-radius:var(--r);margin-bottom:8px;cursor:pointer">
+    <div style="display:flex;gap:4px;margin-bottom:4px"><select id="map-select" style="flex:1;font-family:var(--mono);font-size:12px;background:var(--bg2);border:1px solid var(--borderL);color:var(--text);padding:6px 8px;border-radius:var(--r);cursor:pointer">
       <option value="">── 預設地圖（無牆壁）──</option>
-    </select>
+    </select><button onclick="loadMapList()" title="重新整理地圖清單" style="padding:0 8px;background:var(--bg2);border:1px solid var(--borderL);border-radius:var(--r);color:var(--muted);cursor:pointer;font-size:13px">🔄</button></div>
     <div id="map-status" style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-bottom:8px">尚未載入地圖</div>
     <button class="cbtn cbtn-neu" onclick="applyMap()" id="btn-apply-map">
       <span class="icon">🗺</span><div><div class="lbl">Apply Map</div><div class="sub">套用地圖到目前房間</div></div>
@@ -810,12 +810,13 @@ function createRoom(){
     document.getElementById('room-code-display').textContent = roomId;
     document.getElementById('btn-create-room').textContent = '＋ 重新開設';
     document.getElementById('btn-create-room').disabled = false;
-    loadMapList();
     socket.emit('qbank:get_all');
     socket.emit('qbank:get_room_banks', { roomId });
     socket.emit('map:get_room_map', { roomId });
     socket.emit('teacher:get_bot_settings', { roomId });
     enableCtrl(true); syncBtns();
+    // 延遲載入地圖清單，確保 server 已就緒
+    setTimeout(() => loadMapList(), 300);
   });
   socket.on('connect_error', () => {
     document.getElementById('btn-create-room').disabled = false;
@@ -831,6 +832,7 @@ function attachSocketEvents(){
   socket.on('connect',()=>{
     conn=true; setStatus('ok','ONLINE');
     enableCtrl(true); syncBtns();
+    loadMapList();
   });
   socket.on('disconnect',()=>{
     conn=false; setStatus('err','OFFLINE'); enableCtrl(false); syncBtns();
@@ -1666,10 +1668,13 @@ renderMap();
   }
 
 async function loadMapList() {
+  const sel = document.getElementById('map-select');
+  if (!sel) return;
   try {
     const res = await fetch('/api/maps');
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const maps = await res.json();
-    const sel = document.getElementById('map-select');
+    const current = sel.value;  // 保留目前選取值
     sel.innerHTML = '<option value="">── 預設地圖（無牆壁）──</option>';
     maps.forEach(m => {
       const opt = document.createElement('option');
@@ -1677,7 +1682,18 @@ async function loadMapList() {
       opt.textContent = m.name + (m.type === 'main' ? '  🏆' : '');
       sel.appendChild(opt);
     });
-  } catch(e) { console.warn('[Map] loadMapList failed:', e.message); }
+    if (current) sel.value = current;  // 恢復選取值
+    console.log(`[Map] Loaded ${maps.length} maps`);
+    if (maps.length === 0) {
+      document.getElementById('map-status').textContent = '資料庫無地圖，請先到地圖編輯器建立';
+    } else {
+      document.getElementById('map-status').textContent = `共 ${maps.length} 張地圖可用，請選擇後按 Apply Map`;
+    }
+  } catch(e) {
+    console.error('[Map] loadMapList failed:', e);
+    document.getElementById('map-status').textContent = '⚠ 地圖清單載入失敗：' + e.message;
+    if (typeof toast === 'function') toast('⚠ 地圖清單載入失敗：' + e.message);
+  }
 }
 
 function applyMap() {
