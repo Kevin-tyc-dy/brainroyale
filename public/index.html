@@ -586,7 +586,7 @@ body {
 
     <div class="lobby-field-label">房間代碼</div>
     <input class="lobby-input" id="room-input" type="text"
-      placeholder="輸入老師的 5 碼房間代碼" maxlength="20" spellcheck="false">
+      placeholder="room_001" maxlength="20" spellcheck="false" value="room_001">
 
     <button class="lobby-btn" id="join-btn" onclick="joinGame()">進入房間</button>
 
@@ -720,8 +720,8 @@ const CFG = {
   SYNC_MS:      100,
   SERVER:       window.location.origin,
   MM_SCALE:     148 / 4800,
-  WALL_RADIUS:  24,    // player collision radius vs walls (px)
-  TILE_SIZE:    32,    // default tile size when no map loaded
+  WALL_RADIUS:  14,
+  TILE_SIZE:    32,
 };
 
 // ═══════════════════════════════════════════
@@ -735,10 +735,8 @@ const state = {
   aliveCount: 0, zoneData: null,
   battleTimerRef: null, zoneTimerRef: null,
   gameStarted: false,
-  currentBattleId: null,
+  mapData: null, wallTiles: null,
   spawnX: null, spawnY: null,
-  mapData: null,      // 地圖資料（牆壁/傳送門，從 player:init 收到）
-  wallTiles: null,    // Set<'gx,gy'>，快速碰撞查詢
 };
 
 let socket = null;
@@ -773,35 +771,7 @@ function joinGame() {
     alert('無法連線至伺服器，請確認伺服器已啟動。');
   });
 
-  socket.on('error', ({ code, msg }) => {
-    document.getElementById('join-btn').disabled = false;
-    if (code === 'INVALID_ROOM') {
-      const inp = document.getElementById('room-input');
-      inp.style.borderColor = '#ef4444';
-      inp.style.boxShadow   = '0 0 0 2px rgba(239,68,68,0.3)';
-      setTimeout(() => { inp.style.borderColor=''; inp.style.boxShadow=''; }, 2000);
-      showRoomError('房間代碼無效，請向老師確認代碼。');
-    } else if (code === 'ROOM_FULL') {
-      showRoomError('房間已滿，無法加入。');
-    } else {
-      showRoomError(msg || '加入失敗，請重試。');
-    }
-    socket.disconnect();
-  });
-
   setupSocketEvents();
-}
-
-function showRoomError(msg) {
-  let el = document.getElementById('room-error-msg');
-  if (!el) {
-    el = document.createElement('div');
-    el.id = 'room-error-msg';
-    el.style.cssText = 'color:#ef4444;font-size:12px;margin-top:6px;font-family:var(--mono,monospace);text-align:center';
-    document.getElementById('join-btn').insertAdjacentElement('afterend', el);
-  }
-  el.textContent = '⚠ ' + msg;
-  setTimeout(() => { el.textContent = ''; }, 4000);
 }
 
 function showWaiting() {
@@ -838,12 +808,11 @@ function startCountdown(cb) {
 function setupSocketEvents() {
 
   socket.on('player:init', ({ id, x, y, name, mapData }) => {
-    state.myId    = id;
-    state.myName  = name;
-    state.spawnX  = x;
-    state.spawnY  = y;
+    state.myId   = id;
+    state.myName = name;
+    state.spawnX = x;
+    state.spawnY = y;
     document.getElementById('player-name').textContent = name.toUpperCase();
-    // Store map data for wall rendering + collision
     if (mapData) {
       state.mapData   = mapData;
       state.wallTiles = new Set(mapData.walls.map(([gx,gy]) => gx+','+gy));
@@ -869,7 +838,7 @@ function setupSocketEvents() {
     } else {
       state.mapData = null; state.wallTiles = null;
     }
-    // 若 Phaser 場景已存在（遊戲進行中才收到 map:load），立即重建地形和牆壁
+    // 若 Phaser 場景已存在（遊戲進行中才收到），立即重建地形和牆壁
     if (gameScene) {
       gameScene._buildTerrain();
       gameScene._buildWalls();
@@ -952,9 +921,8 @@ function setupSocketEvents() {
 }
 
 // ═══════════════════════════════════════════
-//  PHASER INIT
+//  CLIENT-SIDE WALL CHECK
 // ═══════════════════════════════════════════
-// Client-side wall tile overlap check
 function clientWallCheck(px, py) {
   if (!state.wallTiles || state.wallTiles.size === 0) return false;
   const ts = state.mapData?.tileSize || CFG.TILE_SIZE;
@@ -971,196 +939,363 @@ function clientWallCheck(px, py) {
   return false;
 }
 
+// ═══════════════════════════════════════════
+//  PHASER INIT
+// ═══════════════════════════════════════════
+function initPhaserGame() {
+  buildHpDisplay();
+
   class GameScene extends Phaser.Scene {
     constructor() {
       super('GameScene');
-      this.localPlayer  = null;
-      this.localLabel   = null;
-      this.playerShadow = null;
-      this.fog          = null;
-      this.zoneGfx      = null;
-      this.keys         = null;
-      this.lastSync     = 0;
-      this.isPaused     = false;
-      this.mmCtx        = document.getElementById('minimap-canvas').getContext('2d');
+      this.localPlayer = null;
+      this.localLabel  = null;
+      this.fog         = null;
+      this.zoneGfx     = null;
+      this.keys        = null;
+      this.lastSync    = 0;
+      this.isPaused    = false;
+      this.mmCtx       = document.getElementById('minimap-canvas').getContext('2d');
       gameScene = this;
     }
 
     preload() {
-      // ── 角色 texture：每幀獨立 48×48 canvas，用 this.textures.addCanvas 註冊 ──
-      // lighten 和 drawCharFrame 在外層 initPhaserGame scope，這裡可直接用
-      for (let i=0; i<8; i++) {
-        const hc = document.createElement('canvas');
-        hc.width = hc.height = 48;
-        drawCharFrame(hc.getContext('2d'), '#f4a261','#3a7bd5','#1e3a8a', i, true);
-        this.textures.addCanvas('hero_f'+i, hc);
+      // ── Draw all textures via canvas (no external assets needed) ──
+      const FRAME_W = 48, FRAME_H = 48, FRAMES = 8;
 
-        const ec = document.createElement('canvas');
-        ec.width = ec.height = 48;
-        drawCharFrame(ec.getContext('2d'), '#d4845a','#c0392b','#5d1010', i, false);
-        this.textures.addCanvas('enemy_f'+i, ec);
+      // ─── Helper: draw one pixel-art character frame onto a canvas context ───
+      // legPhase: 0..7 drives limb swing for run cycle
+      function drawCharFrame(ctx, ox, oy, skinColor, shirtColor, pantsColor, legPhase) {
+        const p = (x,y,w,h,c,a=1) => {
+          ctx.globalAlpha = a;
+          ctx.fillStyle = c;
+          ctx.fillRect(ox+x, oy+y, w, h);
+          ctx.globalAlpha = 1;
+        };
+        // shadow
+        p(10,42,28,4,'rgba(0,0,0,0.18)');
+
+        // ── legs (4 frames: stride left / right) ──
+        const swing = Math.sin(legPhase * Math.PI * 2 / FRAMES);
+        const lLegY = 28 + Math.round(swing * 4);   // left leg
+        const rLegY = 28 - Math.round(swing * 4);   // right leg (opposite)
+        // left shoe
+        p(12, lLegY+10, 7, 4, '#1a1a2e');
+        p(12, lLegY,    7, 11, pantsColor);
+        // right shoe
+        p(29, rLegY+10, 7, 4, '#1a1a2e');
+        p(29, rLegY,    7, 11, pantsColor);
+
+        // ── body / shirt ──
+        p(13, 20, 22, 14, shirtColor);
+        // collar highlight
+        p(15, 20, 18, 3, lighten(shirtColor));
+        // belt
+        p(13, 32, 22, 3, '#5c3a1e');
+
+        // ── arms (swing opposite to legs) ──
+        const armSwing = -swing;
+        const lArmY = 22 + Math.round(armSwing * 3);
+        const rArmY = 22 - Math.round(armSwing * 3);
+        // left arm
+        p(7,  lArmY, 7, 12, skinColor);
+        p(7,  lArmY+10, 7, 4, lighten(skinColor));
+        // right arm
+        p(34, rArmY, 7, 12, skinColor);
+        p(34, rArmY+10, 7, 4, lighten(skinColor));
+
+        // ── head ──
+        p(14, 4, 20, 18, skinColor);
+        // hair
+        p(14, 4,  20, 6, '#2c1810');
+        p(14, 4,  4,  10, '#2c1810');
+        // eyes
+        p(17, 12, 4, 4, '#ffffff');
+        p(27, 12, 4, 4, '#ffffff');
+        p(18, 13, 2, 2, '#222');
+        p(28, 13, 2, 2, '#222');
+        // mouth
+        p(20, 18, 8, 2, '#c0634a');
+        // ear
+        p(12, 11, 3, 5, skinColor);
+        p(33, 11, 3, 5, skinColor);
+
+        // ── backpack (self player only) ──
+        if (shirtColor === '#3a7bd5') {
+          p(35, 21, 8, 12, '#f0a500');
+          p(36, 33, 6, 3,  '#d4891a');
+        }
       }
-      // 幽靈（淘汰玩家）
-      const gc = document.createElement('canvas');
-      gc.width = gc.height = 48;
-      const gCtx = gc.getContext('2d');
-      gCtx.globalAlpha = 0.38;
-      drawCharFrame(gCtx, '#999','#777','#555', 0, false);
-      gCtx.globalAlpha = 1;
-      this.textures.addCanvas('pghost', gc);
 
-      // 地面 tile
-      const gndC = document.createElement('canvas');
-      gndC.width = gndC.height = 48;
-      const g = gndC.getContext('2d');
-      g.fillStyle='#5a8a30'; g.fillRect(0,0,48,48);
-      g.fillStyle='#4e7a28'; g.fillRect(0,0,24,24); g.fillRect(24,24,24,24);
-      g.fillStyle='#6aab38';
-      const rng2 = new Phaser.Math.RandomDataGenerator(['gr']);
-      for(let i=0;i<14;i++) g.fillRect(rng2.between(2,44),rng2.between(2,44),2,rng2.between(3,6));
-      this.textures.addCanvas('ground', gndC);
+      function lighten(hex) {
+        // simple lighten: parse and add 30 to each channel
+        let c = hex.replace('#','');
+        if(c.length===3) c=c.split('').map(x=>x+x).join('');
+        const r=Math.min(255,parseInt(c.slice(0,2),16)+35);
+        const g2=Math.min(255,parseInt(c.slice(2,4),16)+35);
+        const b=Math.min(255,parseInt(c.slice(4,6),16)+35);
+        return `rgb(${r},${g2},${b})`;
+      }
 
-      // 小路 tile
-      const pC = document.createElement('canvas');
-      pC.width = pC.height = 48;
-      const p2 = pC.getContext('2d');
-      p2.fillStyle='#a08050'; p2.fillRect(0,0,48,48);
-      p2.fillStyle='rgba(0,0,0,0.06)';
-      p2.fillRect(0,0,2,48); p2.fillRect(46,0,2,48);
-      this.textures.addCanvas('path', pC);
+      // ─── Generate self-player spritesheet (8 frames × 48px wide) ───
+      const selfCanvas = document.createElement('canvas');
+      selfCanvas.width  = FRAME_W * FRAMES;
+      selfCanvas.height = FRAME_H;
+      const sc = selfCanvas.getContext('2d');
+      for(let i=0;i<FRAMES;i++){
+        drawCharFrame(sc, i*FRAME_W, 0, '#f4a261','#3a7bd5','#2d3a7c', i);
+      }
+      this.textures.addCanvas('hero_sheet', selfCanvas);
 
-      // 陰影（Graphics → texture，完全無位置偏移）
-      const shdG = this.make.graphics({x:0,y:0,add:false});
-      shdG.fillStyle(0x000000, 0.22);
-      shdG.fillEllipse(20,5,40,10);
-      shdG.generateTexture('shadow',40,10);
-      shdG.destroy();
+      // ─── Generate idle frame for self (single frame) ───
+      const idleCanvas = document.createElement('canvas');
+      idleCanvas.width = FRAME_W; idleCanvas.height = FRAME_H;
+      const ic = idleCanvas.getContext('2d');
+      drawCharFrame(ic, 0, 0, '#f4a261','#3a7bd5','#2d3a7c', 0);
+      this.textures.addCanvas('hero_idle', idleCanvas);
 
+      // ─── Generate remote player spritesheet (red shirt) ───
+      const remoteCanvas = document.createElement('canvas');
+      remoteCanvas.width  = FRAME_W * FRAMES;
+      remoteCanvas.height = FRAME_H;
+      const rc = remoteCanvas.getContext('2d');
+      for(let i=0;i<FRAMES;i++){
+        // vary skin tone per player later; default enemy color
+        drawCharFrame(rc, i*FRAME_W, 0, '#e8956d','#c0392b','#5d1a1a', i);
+      }
+      this.textures.addCanvas('enemy_sheet', remoteCanvas);
+
+      // ─── Ghost (eliminated) ───
+      const ghostCanvas = document.createElement('canvas');
+      ghostCanvas.width = FRAME_W; ghostCanvas.height = FRAME_H;
+      const ghost = ghostCanvas.getContext('2d');
+      ghost.globalAlpha = 0.35;
+      drawCharFrame(ghost, 0, 0, '#aaaaaa','#888888','#666666', 0);
+      ghost.globalAlpha = 1;
+      this.textures.addCanvas('pghost', ghostCanvas);
+
+      // ─── Ground tile ───
+      const groundCanvas = document.createElement('canvas');
+      groundCanvas.width = groundCanvas.height = 48;
+      const gnd = groundCanvas.getContext('2d');
+      // bright daylight grass
+      gnd.fillStyle = '#5a8a30'; gnd.fillRect(0,0,48,48);
+      gnd.fillStyle = '#4e7a28'; gnd.fillRect(0,0,24,24); gnd.fillRect(24,24,24,24);
+      gnd.fillStyle = '#6da038';
+      const grng = new Phaser.Math.RandomDataGenerator(['gr']);
+      for(let i=0;i<10;i++){
+        gnd.fillRect(grng.between(2,44),grng.between(2,44),2,grng.between(3,6));
+      }
+      // subtle pebbles
+      gnd.fillStyle = 'rgba(255,255,255,0.06)';
+      gnd.fillRect(8,18,3,3); gnd.fillRect(32,10,2,2); gnd.fillRect(20,36,4,2);
+      this.textures.addCanvas('ground', groundCanvas);
+
+      // ─── Path tile ───
+      const pathCanvas = document.createElement('canvas');
+      pathCanvas.width = pathCanvas.height = 48;
+      const pth = pathCanvas.getContext('2d');
+      pth.fillStyle = '#a0845c'; pth.fillRect(0,0,48,48);
+      this.textures.addCanvas('path', pathCanvas);
+
+      // ─── Shadow under player ───
+      const shadowCanvas = document.createElement('canvas');
+      shadowCanvas.width = 36; shadowCanvas.height = 12;
+      const shd = shadowCanvas.getContext('2d');
+      const grad = shd.createRadialGradient(18,6,0,18,6,18);
+      grad.addColorStop(0,'rgba(0,0,0,0.35)');
+      grad.addColorStop(1,'rgba(0,0,0,0)');
+      shd.fillStyle = grad; shd.fillRect(0,0,36,12);
+      this.textures.addCanvas('shadow', shadowCanvas);
     }
 
     create() {
-      // ── 動畫定義（使用獨立 texture key，不用 frame index，完全不會跳位） ──
-      const heroFrames  = Array.from({length:8},(_,i)=>({key:`hero_f${i}`,  frame:0}));
-      const enemyFrames = Array.from({length:8},(_,i)=>({key:`enemy_f${i}`, frame:0}));
+      const FRAME_W = 48, FRAMES = 8;
 
-      this.anims.create({ key:'hero_run',  frames:heroFrames,  frameRate:10, repeat:-1 });
-      this.anims.create({ key:'hero_idle', frames:[heroFrames[0]],  frameRate:1,  repeat:-1 });
-      this.anims.create({ key:'enemy_run', frames:enemyFrames, frameRate:10, repeat:-1 });
-      this.anims.create({ key:'enemy_idle',frames:[enemyFrames[0]], frameRate:1,  repeat:-1 });
+      // ── Register animations ──
+      // Hero run (8 frames)
+      this.anims.create({
+        key: 'hero_run',
+        frames: Array.from({length:FRAMES},(_,i)=>({
+          key:'hero_sheet',
+          frame: null,
+          // We'll use manual frame via setTexture each step since addCanvas gives one texture
+        })),
+        frameRate: 10,
+        repeat: -1,
+      });
+      // We use a manual frame-stepping approach below (simpler with canvas textures)
 
-      // 世界邊界
+      // World bounds
       this.physics.world.setBounds(0,0,CFG.MAP_W,CFG.MAP_H);
 
-      // ── 牆壁碰撞群組（地圖有牆時建立）──────────────────────
-      // ── Depth 層次：0 地面 | 1 小路 | 2 地形素材 | 3 牆壁 | 4 預設樹 | 5 縮圈 | 9+ 玩家 ──
-      this.wallGroup = this.physics.add.staticGroup();
-      this.wallGfx   = this.add.graphics().setDepth(3);  // 牆壁在地形之上
+      // ── Depth: 0 地面 | 1 小路 | 2 地形 | 3 牆壁 | 4 預設樹 | 5 縮圈 | 9+ 玩家 ──
 
       // 地面
       this.add.tileSprite(0,0,CFG.MAP_W,CFG.MAP_H,'ground').setOrigin(0,0).setDepth(0);
 
-      // 小路十字（無地形資料時才顯示）
-      if (!state.mapData || !state.mapData.terrain || state.mapData.terrain.length === 0) {
+      // 小路（有地形資料時隱藏）
+      if (!state.mapData?.terrain?.length) {
         this.add.tileSprite(CFG.MAP_W/2,0, 80,CFG.MAP_H,'path').setOrigin(0.5,0).setDepth(1);
         this.add.tileSprite(0,CFG.MAP_H/2, CFG.MAP_W,80,'path').setOrigin(0,0.5).setDepth(1);
       }
 
-      // ── 地形素材層（depth 2，在牆壁之下）──
+      // 地形素材（depth 2）
       this.terrainGfx = this.add.graphics().setDepth(2);
       this._buildTerrain();
 
-      // 牆壁（必須在地形之後建立，depth 3）
-      if (state.mapData && state.mapData.walls.length > 0) {
-        this._buildWalls();
-      }
+      // 牆壁（depth 3）
+      this.wallGroup = this.physics.add.staticGroup();
+      this.wallGfx   = this.add.graphics().setDepth(3);
+      if (state.mapData?.walls?.length) this._buildWalls();
 
-      // 預設樹木（無地形資料時才顯示）
-      const hasTerrainData = state.mapData && state.mapData.terrain && state.mapData.terrain.length > 0;
-      if (!hasTerrainData) {
-        const rng = new Phaser.Math.RandomDataGenerator(['tr42']);
-        const treeGfx = this.add.graphics().setDepth(4);
-        for(let i=0;i<220;i++){
-          const tx=rng.between(80,CFG.MAP_W-80), ty=rng.between(80,CFG.MAP_H-80), tr=rng.between(12,28);
-          treeGfx.fillStyle(rng.pick([0x3d7a1a,0x4a8f20,0x52a028]),1);
-          treeGfx.fillCircle(tx,ty,tr);
-          treeGfx.fillStyle(rng.pick([0x5aa832,0x68c040,0x72c840]),0.85);
-          treeGfx.fillCircle(tx-tr*0.2,ty-tr*0.25,tr*0.62);
-          treeGfx.fillStyle(0x7a4f2a,1);
-          treeGfx.fillRect(tx-3,ty+tr-4,6,8);
-        }
+      // 預設樹木（有地形資料時隱藏）
+      const rng = new Phaser.Math.RandomDataGenerator(['tr42']);
+      const treeGfx = this.add.graphics().setDepth(4);
+      if (!state.mapData?.terrain?.length) {
+      for(let i=0;i<220;i++){
+        const tx = rng.between(80,CFG.MAP_W-80);
+        const ty = rng.between(80,CFG.MAP_H-80);
+        const tr = rng.between(12,28);
+        const baseColors = [0x3d7a1a,0x4a8f20,0x358014,0x52a028];
+        const topColors  = [0x5aa832,0x68c040,0x4daa20,0x72c840];
+        treeGfx.fillStyle(rng.pick(baseColors),1);
+        treeGfx.fillCircle(tx,ty,tr);
+        treeGfx.fillStyle(rng.pick(topColors),0.8);
+        treeGfx.fillCircle(tx-tr*0.2,ty-tr*0.25,tr*0.6);
+        // trunk
+        treeGfx.fillStyle(0x7a4f2a,1);
+        treeGfx.fillRect(tx-3,ty+tr-4,6,8);
       }
+      } // end if (!terrain)
 
-      // 縮圈圖形
+      // ── Zone graphics ──
       this.zoneGfx = this.add.graphics().setDepth(5);
 
-      // ── 主角 ──
-      // 使用伺服器分配的隨機出生點（state.spawnX/Y），若尚未收到則 fallback 到中心
+      // ── Local player: shadow + sprite ──
       const cx = state.spawnX || CFG.MAP_W/2;
       const cy = state.spawnY || CFG.MAP_H/2;
 
-      // 陰影放在腳下（depth 9，主角 depth 10）
-      this.playerShadow = this.add.image(cx, cy+4, 'shadow')
-        .setDepth(9).setAlpha(0.7);
+      // Shadow (depth just below player)
+      this.playerShadow = this.add.image(cx, cy+22, 'shadow').setDepth(9).setAlpha(0.7);
 
-      // 主角使用 hero_f0 作為初始 texture
-      // origin(0.5, 1) → 錨點在腳底中間，切換動畫幀時絕對不會位移
-      this.localPlayer = this.physics.add.sprite(cx, cy, 'hero_f0')
-        .setOrigin(0.5, 1)
+      // Hero sprite — start with idle texture
+      this.localPlayer = this.physics.add.sprite(cx, cy, 'hero_idle')
         .setCollideWorldBounds(true)
         .setDepth(10)
-        .setScale(1);
+        .setOrigin(0.5, 0.75); // anchor near feet
 
-      // 播放 idle 動畫
-      this.localPlayer.play('hero_idle');
+      // Direction/animation state
+      this._facing   = 'right'; // 'left' | 'right'
+      this._runFrame = 0;
+      this._runTick  = 0;
+      this._isMoving = false;
+      this._FRAME_W  = FRAME_W;
+      this._FRAMES   = FRAMES;
 
-      // 玩家與牆壁碰撞
-      if (this.wallGroup) {
-        this.physics.add.collider(this.localPlayer, this.wallGroup);
-      }
-
-      // 名字標籤（跟著 localPlayer 腳底位置）
-      this.localLabel = this.add.text(cx, cy, state.myName, {
+      // Name label
+      this.localLabel = this.add.text(cx, cy-32, state.myName, {
         fontFamily:'Rajdhani', fontSize:'14px',
         color:'#ffffff', stroke:'#1a3a6e', strokeThickness:4,
-      }).setOrigin(0.5, 1).setDepth(11);
+        shadow:{ x:0, y:1, color:'#000', blur:4, fill:true },
+      }).setOrigin(0.5,1).setDepth(11);
 
-      // 鏡頭跟隨（跟隨錨點=腳底，不是中心）
+      // ── Camera ──
+      if (this.wallGroup) this.physics.add.collider(this.localPlayer, this.wallGroup);
       this.cameras.main
         .setBounds(0,0,CFG.MAP_W,CFG.MAP_H)
-        .startFollow(this.localPlayer, true, 0.09, 0.09);
-      this.scale.on('resize', sz => {
-        this.cameras.main.setSize(sz.width, sz.height);
+        .startFollow(this.localPlayer,true,0.09,0.09)
+        .setZoom(1);
+      this.scale.on('resize',sz=>{
+        this.cameras.main.setSize(sz.width,sz.height);
       });
 
-      // 迷霧
+      // ── Fog (reduced opacity for brighter feel) ──
       this.fog = this.add.graphics().setDepth(50).setScrollFactor(0);
 
-      // 鍵盤
+      // ── Input ──
       this.keys = this.input.keyboard.addKeys({
-        W:    Phaser.Input.Keyboard.KeyCodes.W,
-        A:    Phaser.Input.Keyboard.KeyCodes.A,
-        S:    Phaser.Input.Keyboard.KeyCodes.S,
-        D:    Phaser.Input.Keyboard.KeyCodes.D,
+        W:Phaser.Input.Keyboard.KeyCodes.W,
+        A:Phaser.Input.Keyboard.KeyCodes.A,
+        S:Phaser.Input.Keyboard.KeyCodes.S,
+        D:Phaser.Input.Keyboard.KeyCodes.D,
         UP:   Phaser.Input.Keyboard.KeyCodes.UP,
         DOWN: Phaser.Input.Keyboard.KeyCodes.DOWN,
         LEFT: Phaser.Input.Keyboard.KeyCodes.LEFT,
         RIGHT:Phaser.Input.Keyboard.KeyCodes.RIGHT,
       });
 
-      this._wasMoving = false;
-
       this.updateHpDisplay(state.myHp);
     }
 
-    // ── 遠端玩家生成 ─────────────────────────────────────────
+    // ── Remote player updates from server ──
+    onWorldUpdate(players) {
+      const seen = new Set();
+      players.forEach(p => {
+        if (p.id === state.myId) return;
+        seen.add(p.id);
+
+        if (!state.remotePlayers.has(p.id)) {
+          this._spawnRemote(p);
+        }
+        const rp = state.remotePlayers.get(p.id);
+
+        // detect movement for animation
+        const moved = Math.hypot(p.x-rp.prevX, p.y-rp.prevY) > 2;
+        if(moved && rp.isAlive){
+          rp.runTick++;
+          if(rp.runTick % 3 === 0){
+            rp.runFrame = (rp.runFrame+1) % 8;
+          }
+          const fx = rp.runFrame * 48;
+          rp.sprite.setCrop(fx,0,48,48);
+          rp.sprite.setX(p.x); // will be set below
+          // flip based on direction
+          rp.sprite.setFlipX(p.x < rp.prevX);
+        } else if(rp.isAlive) {
+          rp.sprite.setCrop(0,0,48,48); // idle pose frame 0
+        }
+        rp.prevX = p.x; rp.prevY = p.y;
+
+        this.tweens.killTweensOf(rp.sprite);
+        this.tweens.add({
+          targets: rp.sprite, x: p.x, y: p.y,
+          duration: CFG.SYNC_MS * 1.3, ease: 'Linear',
+        });
+        rp.nameText.setPosition(p.x, p.y-36);
+        if(rp.shadow) rp.shadow.setPosition(p.x, p.y+22);
+        rp.hp = p.hp; rp.isAlive = p.isAlive;
+
+        // alive / ghost
+        if(!p.isAlive){
+          rp.sprite.setTexture('pghost').setCrop(0,0,48,48);
+          rp.sprite.setAlpha(0.4).setDepth(7).setFlipX(false);
+          if(rp.shadow) rp.shadow.setAlpha(0);
+        } else {
+          rp.sprite.setTexture('enemy_sheet');
+          rp.sprite.setAlpha(1).setDepth(9);
+          if(rp.shadow) rp.shadow.setAlpha(0.55);
+        }
+      });
+
+      // Remove gone players
+      state.remotePlayers.forEach((rp, id) => {
+        if (!seen.has(id)) {
+          rp.sprite.destroy();
+          rp.nameText.destroy();
+          if(rp.shadow) rp.shadow.destroy();
+          state.remotePlayers.delete(id);
+        }
+      });
+    }
+
     _spawnRemote(p) {
-      const shadow = this.add.image(p.x, p.y+4, 'shadow')
-        .setDepth(8).setAlpha(0.5);
-      // 遠端玩家也用 enemy_f0 初始，origin(0.5,1) 腳底錨點
-      const sprite = this.add.sprite(p.x, p.y, 'enemy_f0')
-        .setOrigin(0.5, 1).setDepth(9);
-      sprite.play('enemy_idle');
-      const nameText = this.add.text(p.x, p.y, p.name||'?', {
+      // shadow
+      const shadow = this.add.image(p.x, p.y+22, 'shadow').setDepth(8).setAlpha(0.55);
+      const sprite = this.add.sprite(p.x, p.y, 'enemy_sheet')
+        .setDepth(9).setOrigin(0.5,0.75)
+        .setCrop(0,0,48,48); // show first frame
+      const nameText = this.add.text(p.x, p.y-32, p.name||'?', {
         fontFamily:'Rajdhani', fontSize:'13px',
         color:'#ffaaaa', stroke:'#4a0000', strokeThickness:4,
       }).setOrigin(0.5,1).setDepth(10);
@@ -1168,239 +1303,81 @@ function clientWallCheck(px, py) {
       state.remotePlayers.set(p.id, {
         sprite, nameText, shadow,
         hp:p.hp, isAlive:p.isAlive,
-        prevX:p.x, prevY:p.y,
-      });
-    }
-
-    // ── 遠端玩家更新 ─────────────────────────────────────────
-    onWorldUpdate(players) {
-      const seen = new Set();
-      players.forEach(p => {
-        if (p.id === state.myId) return;
-        seen.add(p.id);
-        if (!state.remotePlayers.has(p.id)) this._spawnRemote(p);
-
-        const rp = state.remotePlayers.get(p.id);
-        const moved = Math.hypot(p.x-rp.prevX, p.y-rp.prevY) > 2;
-
-        // ── 動畫切換（只在狀態改變時觸發，不每幀呼叫）──
-        if (p.isAlive) {
-          const wantAnim = moved ? 'enemy_run' : 'enemy_idle';
-          if (rp.sprite.anims.currentAnim?.key !== wantAnim) {
-            rp.sprite.play(wantAnim);
-          }
-          // 翻轉方向
-          if (p.x < rp.prevX - 1) rp.sprite.setFlipX(true);
-          if (p.x > rp.prevX + 1) rp.sprite.setFlipX(false);
-        }
-
-        rp.prevX = p.x; rp.prevY = p.y;
-
-        // 平滑移動（tween 不影響 sprite 的 texture/anim）
-        this.tweens.killTweensOf(rp.sprite);
-        this.tweens.killTweensOf(rp.shadow);
-        this.tweens.add({
-          targets: [rp.sprite, rp.shadow],
-          x: p.x, y: (target) => target === rp.shadow ? p.y+4 : p.y,
-          duration: CFG.SYNC_MS * 1.2, ease: 'Linear',
-        });
-        rp.nameText.setPosition(p.x, p.y);
-        rp.hp = p.hp; rp.isAlive = p.isAlive;
-
-        if (!p.isAlive) {
-          rp.sprite.stop();
-          rp.sprite.setTexture('pghost').setAlpha(0.4).setDepth(7);
-          if (rp.shadow) rp.shadow.setAlpha(0);
-        } else {
-          rp.sprite.setAlpha(1).setDepth(9);
-          if (rp.shadow) rp.shadow.setAlpha(0.5);
-        }
-      });
-
-      // 移除已離線玩家
-      state.remotePlayers.forEach((rp, id) => {
-        if (!seen.has(id)) {
-          rp.sprite.destroy();
-          rp.nameText.destroy();
-          if (rp.shadow) rp.shadow.destroy();
-          state.remotePlayers.delete(id);
-        }
+        runFrame:0, runTick:0, prevX:p.x, prevY:p.y,
       });
     }
 
     setPaused(v) { this.isPaused = v; }
 
-    correctPosition(x, y) { this.localPlayer.setPosition(x, y); }
+    correctPosition(x, y) {
+      this.localPlayer.setPosition(x, y);
+    }
 
     spectateMove(x, y) {
-      this.tweens.add({ targets:this.localPlayer, x, y, duration:220, ease:'Linear' });
-    }
-
-    onBattleStart({ battleId, opponentName, question }) {
-      // 清除舊戰鬥的殘留 timer（防止雙重 submit）
-      clearTimeout(state.battleTimerRef);
-      state.isLocked = true; state.inBattle = true;
-      this.localPlayer.setVelocity(0, 0);
-      this.localPlayer.play('hero_idle');
-      showBattleUI(battleId, opponentName, question);
-    }
-
-    onBattleResult(result) { hideBattleUI(result); }
-
-    onKnockback(pos) {
-      // 停掉舊 tween，改用物理速度推，讓 Phaser 碰撞自然解算，不穿牆
-      this.tweens.killTweensOf(this.localPlayer);
-
-      const sp = this.localPlayer;
-      const dx = pos.x - sp.x;
-      const dy = pos.y - sp.y;
-      const dist = Math.hypot(dx, dy) || 1;
-
-      // 速度方向 × 強度（px/s），時間約 350ms 自然衰減
-      const SPEED = 900;
-      sp.setVelocity((dx / dist) * SPEED, (dy / dist) * SPEED);
-
-      // 350ms 後停速，解鎖玩家
-      this.time.delayedCall(350, () => {
-        if (sp.active) sp.setVelocity(0, 0);
-        state.isLocked = false;
+      this.tweens.add({
+        targets: this.localPlayer, x, y, duration:220, ease:'Linear',
       });
     }
 
-    updateHpDisplay(hp) {
-      for(let i=0;i<CFG.MAX_HP;i++){
-        const h = document.getElementById(`heart_${i}`);
-        if(h) h.className = 'hp-heart ' + (i<hp?'alive':'dead');
-      }
-      if(hp<=2 && this.cameras?.main) this.cameras.main.shake(320, 0.005*(3-hp));
+    onBattleStart({ battleId, opponentName, question }) {
+      state.isLocked = true; state.inBattle = true;
+      this.localPlayer.setVelocity(0,0);
+      showBattleUI(battleId, opponentName, question);
     }
 
-    // ── 主迴圈 update ─────────────────────────────────────────
-    update(time) {
-      if (!this.localPlayer) return;
-
-      // 取得輸入速度
-      let vx=0, vy=0;
-      if (!state.isLocked && !this.isPaused && state.isAlive) {
-        const k = this.keys, sp = CFG.SPEED;
-        if (k.A.isDown||k.LEFT.isDown)  vx -= 1;
-        if (k.D.isDown||k.RIGHT.isDown) vx += 1;
-        if (k.W.isDown||k.UP.isDown)    vy -= 1;
-        if (k.S.isDown||k.DOWN.isDown)  vy += 1;
-        if (vx && vy) { vx*=0.7071; vy*=0.7071; }
-        this.localPlayer.setVelocity(vx*sp, vy*sp);
-      } else {
-        this.localPlayer.setVelocity(0, 0);
-      }
-
-      const moving = (vx!==0||vy!==0) && state.isAlive && !state.isLocked;
-
-      // ── 動畫：只在「移動/停止」狀態切換時呼叫 play()，不每幀重設 ──
-      if (moving !== this._wasMoving) {
-        this.localPlayer.play(moving ? 'hero_run' : 'hero_idle');
-        this._wasMoving = moving;
-      }
-
-      // ── 方向翻轉（只在實際改變方向時設定）──
-      if (vx < 0) this.localPlayer.setFlipX(true);
-      if (vx > 0) this.localPlayer.setFlipX(false);
-
-      // 陰影跟隨腳底（localPlayer origin 是 (0.5,1) 即腳底）
-      if (this.playerShadow) {
-        this.playerShadow.setPosition(
-          this.localPlayer.x,
-          this.localPlayer.y + 4
-        );
-        this.playerShadow.setScale(moving ? 1.1 : 1.0, moving ? 0.85 : 1.0);
-      }
-
-      // 名字標籤跟隨（顯示在頭頂，腳底 y - sprite 高度 - 間距）
-      this.localLabel.setPosition(this.localPlayer.x, this.localPlayer.y - 50);
-
-      // 座標同步至伺服器（節流）
-      if (time - this.lastSync > CFG.SYNC_MS && !state.isLocked && !this.isPaused && state.isAlive) {
-        this.lastSync = time;
-        // Only send if not overlapping a wall tile (extra client guard)
-        const px = this.localPlayer.x, py = this.localPlayer.y;
-        if (!clientWallCheck(px, py)) {
-          socket.emit('player:move', { x: px, y: py, timestamp: Date.now() });
-        }
-      }
-
-      if (!state.isLocked && state.isAlive) this._highlightNear();
-
-      this._drawFog();
-      this._drawZone();
-      this._drawMinimap();
+    onBattleResult(result) {
+      hideBattleUI(result);
     }
 
     _buildTerrain() {
-      if (!state.mapData || !state.mapData.terrain || state.mapData.terrain.length === 0) return;
+      if (!state.mapData?.terrain?.length) return;
       const { terrain, tileSize } = state.mapData;
-      const ts = tileSize || 32;
-
-      if (this.terrainGfx) this.terrainGfx.clear();
-
+      const ts  = tileSize || 32;
       const gfx = this.terrainGfx;
+      if (!gfx) return;
+      gfx.clear();
 
-      // 色塊 + 幾何形狀表示地形（不依賴 tileset 圖片）
       const STYLE = {
-        g: { base:0x4a8c28, hi:0x62aa38, lo:0x3a7020 }, // 草地
-        w: { base:0x1a6eb5, hi:0x3a9ad4, lo:0x0d4a80 }, // 水域
-        m: { base:0x7a6448, hi:0x9a8460, lo:0x5a4830 }, // 山脈
-        t: { base:0x2d6b1a, hi:0x3d8a22, lo:0x1e4a10 }, // 樹木
-        f: { base:0x1e5010, hi:0x2a6a18, lo:0x123008 }, // 森林
-        b: { base:0xb07040, hi:0xd09060, lo:0x805020 }, // 建築
-        r: { base:0xc8a84e, hi:0xdec070, lo:0xa08030 }, // 道路
-        v: { base:0xb07040, hi:0xd09060, lo:0x805020 }, // village
+        g:{base:0x4a8c28,hi:0x62aa38,lo:0x3a7020},
+        w:{base:0x1a6eb5,hi:0x3a9ad4,lo:0x0d4a80},
+        m:{base:0x7a6448,hi:0x9a8460,lo:0x5a4830},
+        t:{base:0x2d6b1a,hi:0x3d8a22,lo:0x1e4a10},
+        f:{base:0x1e5010,hi:0x2a6a18,lo:0x123008},
+        b:{base:0xb07040,hi:0xd09060,lo:0x805020},
+        r:{base:0xc8a84e,hi:0xdec070,lo:0xa08030},
+        v:{base:0xb07040,hi:0xd09060,lo:0x805020},
       };
 
       terrain.forEach(([gx, gy, tileId]) => {
-        const px = gx * ts, py = gy * ts;
-        const key = (tileId || 'g')[0];
-        const s = STYLE[key] || STYLE.g;
-
-        // 底色
-        gfx.fillStyle(s.base, 1);
-        gfx.fillRect(px, py, ts, ts);
-
-        // 頂部高光
-        gfx.fillStyle(s.hi, 0.5);
-        gfx.fillRect(px, py, ts, Math.ceil(ts * 0.25));
-
-        // 底部陰影
-        gfx.fillStyle(s.lo, 0.4);
-        gfx.fillRect(px, py + Math.floor(ts * 0.75), ts, Math.ceil(ts * 0.25));
-
-        // 地形特徵形狀
-        if (key === 'm') {
-          // 山：三角形
-          gfx.fillStyle(0xc0b090, 0.7);
-          gfx.fillTriangle(px+ts/2, py+2, px+2, py+ts-2, px+ts-2, py+ts-2);
-          gfx.fillStyle(0xf0f0ff, 0.8);
-          gfx.fillTriangle(px+ts/2, py+2, px+ts/2-5, py+10, px+ts/2+5, py+10);
-        } else if (key === 'w') {
-          // 水：波紋線
-          gfx.fillStyle(0x80d0ff, 0.3);
-          gfx.fillRect(px+2, py+ts*0.3, ts-4, 3);
-          gfx.fillRect(px+4, py+ts*0.6, ts-8, 3);
-        } else if (key === 't' || key === 'f') {
-          // 樹：圓形樹冠
-          const cr = ts * 0.35;
-          gfx.fillStyle(key==='f' ? 0x1a5010 : 0x2a7018, 1);
-          gfx.fillCircle(px+ts/2, py+ts*0.4, cr);
-          gfx.fillStyle(key==='f' ? 0x2a6818 : 0x3a9024, 0.8);
-          gfx.fillCircle(px+ts/2-3, py+ts*0.35, cr*0.7);
-        } else if (key === 'b') {
-          // 建築：屋頂三角 + 牆
-          gfx.fillStyle(0xc03020, 1);
-          gfx.fillTriangle(px+2, py+ts*0.5, px+ts/2, py+4, px+ts-2, py+ts*0.5);
-          gfx.fillStyle(0xe0c090, 1);
-          gfx.fillRect(px+6, py+ts*0.5, ts-12, ts*0.45);
-        } else if (key === 'r') {
-          // 道路：中線
-          gfx.fillStyle(0xfff0a0, 0.6);
-          gfx.fillRect(px+ts/2-1, py, 2, ts);
+        const px = gx*ts, py = gy*ts;
+        const k  = (tileId||'g')[0];
+        const s  = STYLE[k] || STYLE.g;
+        gfx.fillStyle(s.base,1);  gfx.fillRect(px,py,ts,ts);
+        gfx.fillStyle(s.hi,0.5);  gfx.fillRect(px,py,ts,Math.ceil(ts*.25));
+        gfx.fillStyle(s.lo,0.4);  gfx.fillRect(px,py+Math.floor(ts*.75),ts,Math.ceil(ts*.25));
+        if (k==='m') {
+          gfx.fillStyle(0xc0b090,.7);
+          gfx.fillTriangle(px+ts/2,py+2,px+2,py+ts-2,px+ts-2,py+ts-2);
+          gfx.fillStyle(0xf0f0ff,.85);
+          gfx.fillTriangle(px+ts/2,py+2,px+ts/2-5,py+12,px+ts/2+5,py+12);
+        } else if (k==='w') {
+          gfx.fillStyle(0x80d0ff,.35);
+          gfx.fillRect(px+2,py+ts*.3,ts-4,3);
+          gfx.fillRect(px+4,py+ts*.6,ts-8,3);
+        } else if (k==='t'||k==='f') {
+          const cr=ts*.35;
+          gfx.fillStyle(k==='f'?0x1a5010:0x2a7018,1);
+          gfx.fillCircle(px+ts/2,py+ts*.4,cr);
+          gfx.fillStyle(k==='f'?0x2a6818:0x3a9024,.8);
+          gfx.fillCircle(px+ts/2-3,py+ts*.35,cr*.7);
+        } else if (k==='b') {
+          gfx.fillStyle(0xc03020,1);
+          gfx.fillTriangle(px+2,py+ts*.5,px+ts/2,py+4,px+ts-2,py+ts*.5);
+          gfx.fillStyle(0xe0c090,1);
+          gfx.fillRect(px+6,py+ts*.5,ts-12,ts*.45);
+        } else if (k==='r') {
+          gfx.fillStyle(0xfff0a0,.6);
+          gfx.fillRect(px+ts/2-1,py,2,ts);
         }
       });
     }
@@ -1408,61 +1385,130 @@ function clientWallCheck(px, py) {
     _buildWalls() {
       if (!state.mapData) return;
       const { walls, tileSize } = state.mapData;
-      const ts = tileSize || 32;
+      const ts  = tileSize || 32;
       const gfx = this.wallGfx;
+      if (!gfx) return;
       gfx.clear();
-
-      // 清掉舊的物理碰撞體（重複呼叫時避免疊加）
       this.wallGroup.clear(true, true);
 
-      // Build a Set of terrain tile positions — these already have visual from _buildTerrain
-      // so we skip drawing gray bricks on them (only add physics body)
-      const terrainSet = new Set(
-        (state.mapData.terrain || []).map(([gx, gy]) => gx + ',' + gy)
-      );
-
-      // Precompute neighbor set for top-edge detection
+      const terrainSet = new Set((state.mapData.terrain||[]).map(([gx,gy])=>gx+','+gy));
       const wSet = state.wallTiles;
 
       walls.forEach(([gx, gy]) => {
-        const px = gx * ts, py = gy * ts;
-        const key = gx + ',' + gy;
-
-        // Only draw gray brick visual for MANUAL walls (not terrain-based walls)
-        if (!terrainSet.has(key)) {
-          // Base stone fill
-          gfx.fillStyle(0x3d4f5c, 1);
-          gfx.fillRect(px, py, ts, ts);
-
-          // Top highlight (only if no wall above)
-          if (!wSet.has(gx+','+(gy-1))) {
-            gfx.fillStyle(0x6b8394, 1);
-            gfx.fillRect(px+1, py+1, ts-2, 3);
+        const px=gx*ts, py=gy*ts;
+        if (!terrainSet.has(gx+','+gy)) {
+          gfx.fillStyle(0x3d4f5c,1); gfx.fillRect(px,py,ts,ts);
+          if (!wSet?.has(gx+','+(gy-1))) {
+            gfx.fillStyle(0x6b8394,1); gfx.fillRect(px+1,py+1,ts-2,3);
           }
-
-          // Inner shadow bottom-right
-          gfx.fillStyle(0x1e2d35, 0.5);
-          gfx.fillRect(px+ts-3, py, 3, ts);
-          gfx.fillRect(px, py+ts-3, ts, 3);
+          gfx.fillStyle(0x1e2d35,.5);
+          gfx.fillRect(px+ts-3,py,3,ts);
+          gfx.fillRect(px,py+ts-3,ts,3);
         }
-
-        // Physics body always added regardless (collision still needed)
-        const body = this.add.rectangle(px+ts/2, py+ts/2, ts, ts)
-          .setVisible(false);
-        this.physics.add.existing(body, true); // true = static
+        const body = this.add.rectangle(px+ts/2,py+ts/2,ts,ts).setVisible(false);
+        this.physics.add.existing(body,true);
         this.wallGroup.add(body);
       });
 
-      // Draw portal overlays
       if (state.mapData.portals) {
         state.mapData.portals.forEach(p => {
-          const px2 = p.gx * ts, py2 = p.gy * ts;
-          const grad = gfx.fillStyle(0xb040ff, 0.25);
-          gfx.fillRect(px2, py2, ts, ts);
-          gfx.lineStyle(2, 0xb040ff, 0.6);
-          gfx.strokeRect(px2+1, py2+1, ts-2, ts-2);
+          const px2=p.gx*ts, py2=p.gy*ts;
+          gfx.fillStyle(0xb040ff,.25); gfx.fillRect(px2,py2,ts,ts);
+          gfx.lineStyle(2,0xb040ff,.6); gfx.strokeRect(px2+1,py2+1,ts-2,ts-2);
         });
       }
+    }
+
+    onKnockback(pos) {
+      this.tweens.killTweensOf(this.localPlayer);
+      const sp=this.localPlayer, dx=pos.x-sp.x, dy=pos.y-sp.y;
+      const dist=Math.hypot(dx,dy)||1;
+      sp.setVelocity((dx/dist)*900,(dy/dist)*900);
+      this.time.delayedCall(350,()=>{ if(sp.active){sp.setVelocity(0,0);} state.isLocked=false; });
+    }
+
+    updateHpDisplay(hp) {
+      for(let i=0;i<CFG.MAX_HP;i++){
+        const h = document.getElementById(`heart_${i}`);
+        if(h) h.className = 'hp-heart ' + (i<hp?'alive':'dead');
+      }
+      if(hp<=2 && this.cameras?.main) {
+        this.cameras.main.shake(320, 0.005*(3-hp));
+      }
+    }
+
+    update(time) {
+      if(!this.localPlayer) return;
+
+      let vx=0, vy=0;
+      if(!state.isLocked && !this.isPaused && state.isAlive) {
+        [vx,vy] = this._move();
+      } else {
+        this.localPlayer.setVelocity(0,0);
+      }
+
+      const moving = (vx!==0||vy!==0) && state.isAlive && !state.isLocked;
+
+      // ── Run animation: step through hero_sheet frames ──
+      if(moving){
+        this._runTick++;
+        if(this._runTick % 4 === 0){          // every 4 game ticks → next frame
+          this._runFrame = (this._runFrame+1) % this._FRAMES;
+        }
+        const fx = this._runFrame * this._FRAME_W;
+        this.localPlayer.setTexture('hero_sheet').setCrop(fx,0,this._FRAME_W,48);
+        this._isMoving = true;
+      } else {
+        // idle: reset to frame 0 of idle texture
+        if(this._isMoving){
+          this.localPlayer.setTexture('hero_idle').setCrop(0,0,this._FRAME_W,48);
+          this._isMoving = false;
+          this._runFrame = 0;
+          this._runTick  = 0;
+        }
+      }
+
+      // Flip sprite based on horizontal direction
+      if(vx < 0) { this.localPlayer.setFlipX(true);  this._facing='left'; }
+      if(vx > 0) { this.localPlayer.setFlipX(false); this._facing='right'; }
+
+      // Shadow follows player
+      if(this.playerShadow){
+        this.playerShadow.setPosition(this.localPlayer.x, this.localPlayer.y+22);
+        // squish shadow when moving
+        this.playerShadow.setScale(moving?1.1:0.9, moving?0.7:0.9);
+      }
+
+      // Name label
+      this.localLabel.setPosition(this.localPlayer.x, this.localPlayer.y-36);
+
+      // Sync to server
+      if(time - this.lastSync > CFG.SYNC_MS && !state.isLocked && !this.isPaused && state.isAlive) {
+        this.lastSync = time;
+        socket.emit('player:move',{
+          x: this.localPlayer.x,
+          y: this.localPlayer.y,
+          timestamp: Date.now(),
+        });
+      }
+
+      if(!state.isLocked && state.isAlive) this._highlightNear();
+
+      this._drawFog();
+      this._drawZone();
+      this._drawMinimap();
+    }
+
+    _move() {
+      const k = this.keys, sp = CFG.SPEED;
+      let vx=0, vy=0;
+      if(k.A.isDown||k.LEFT.isDown)  vx-=1;
+      if(k.D.isDown||k.RIGHT.isDown) vx+=1;
+      if(k.W.isDown||k.UP.isDown)    vy-=1;
+      if(k.S.isDown||k.DOWN.isDown)  vy+=1;
+      if(vx&&vy){ vx*=0.7071; vy*=0.7071; }
+      this.localPlayer.setVelocity(vx*sp, vy*sp);
+      return [vx,vy];
     }
 
     _highlightNear() {
@@ -1480,40 +1526,28 @@ function clientWallCheck(px, py) {
       if(state.isSpectating) return;
       const W=this.cameras.main.width, H=this.cameras.main.height;
       const cx=W/2, cy=H/2, R=CFG.FOG_R;
-
-      // ── 霧效：strokeCircle 環帶法 ──────────────────────────
-      // 原理：用寬線條（lineStyle）畫同心圓環
-      //   - 中心附近：alpha≈0（透明，看得到地圖）
-      //   - 視野邊緣：alpha 漸增
-      //   - 視野外：fillRect 全黑
-      const STEPS  = 36;
-      const ringW  = (R / STEPS) + 1;   // 每環寬度（+1 避免縫隙）
-
-      // 1. 從外往內畫視野邊緣漸層環（alpha 從高到低）
-      for (let i = STEPS; i >= 1; i--) {
-        const t     = i / STEPS;             // 1=最外, ~0=中心
-        const r     = R * t;
-        const alpha = Math.pow(t, 2) * 0.88; // 平方讓中心更透明
-        this.fog.lineStyle(ringW, 0x000000, alpha);
-        this.fog.strokeCircle(cx, cy, r);
+      // Lighter fog — max alpha 0.42 instead of 0.75
+      this.fog.fillStyle(0x000000,0.42);
+      this.fog.fillRect(0,0,W,H);
+      // Gradient fade toward center — softer
+      for(let i=18;i>=0;i--){
+        const t=i/18;
+        this.fog.fillStyle(0x000000, t*0.42);
+        this.fog.fillCircle(cx,cy, R*(1-t*0.82));
       }
-
-      // 2. 視野外（半徑 > R）補全黑
-      // 用一個大矩形 + 再畫一個反向遮罩圓
-      // 做法：畫足夠厚的外環到螢幕角落
-      const cornerR = Math.ceil(Math.hypot(W, H));
-      const gapW    = cornerR - R + 4;
-      this.fog.lineStyle(gapW, 0x000000, 0.9);
-      this.fog.strokeCircle(cx, cy, R + gapW / 2);
     }
+
     _drawZone() {
       this.zoneGfx.clear();
       if(!state.zoneData) return;
       const {centerX:cx,centerY:cy,currentRadius:r} = state.zoneData;
-      this.zoneGfx.fillStyle(0x5500aa,0.10);
+      // Danger fill (outside ring)
+      this.zoneGfx.fillStyle(0x5500aa,0.12);
       this.zoneGfx.fillRect(0,0,CFG.MAP_W,CFG.MAP_H);
+      // Overwrite inside with clear
       this.zoneGfx.fillStyle(0x000000,0);
       this.zoneGfx.fillCircle(cx,cy,r);
+      // Ring border
       this.zoneGfx.lineStyle(3,0xb040ff,0.9);
       this.zoneGfx.strokeCircle(cx,cy,r);
     }
@@ -1522,21 +1556,25 @@ function clientWallCheck(px, py) {
       const ctx=this.mmCtx, sc=CFG.MM_SCALE, sz=148;
       ctx.clearRect(0,0,sz,sz);
       ctx.fillStyle='#1e3010'; ctx.fillRect(0,0,sz,sz);
+
       if(state.zoneData){
         const {centerX:cx,centerY:cy,currentRadius:r}=state.zoneData;
         ctx.beginPath(); ctx.arc(cx*sc,cy*sc,r*sc,0,Math.PI*2);
         ctx.strokeStyle='rgba(176,64,255,0.7)'; ctx.lineWidth=1.5; ctx.stroke();
       }
+
       state.remotePlayers.forEach(rp=>{
         ctx.beginPath();
-        ctx.arc(rp.sprite.x*sc, rp.sprite.y*sc, rp.isAlive?2.5:1.5, 0, Math.PI*2);
+        ctx.arc(rp.sprite.x*sc,rp.sprite.y*sc, rp.isAlive?2.5:1.5, 0,Math.PI*2);
         ctx.fillStyle=rp.isAlive?'#ff6b6b':'rgba(255,255,255,0.2)';
         ctx.fill();
       });
+
       if(this.localPlayer){
         const px=this.localPlayer.x*sc, py=this.localPlayer.y*sc;
         ctx.beginPath(); ctx.arc(px,py,3.5,0,Math.PI*2);
         ctx.fillStyle='#4dabf7'; ctx.fill();
+        // Glow
         ctx.beginPath(); ctx.arc(px,py,6,0,Math.PI*2);
         ctx.fillStyle='rgba(77,171,247,0.15)'; ctx.fill();
       }
@@ -1561,7 +1599,6 @@ function clientWallCheck(px, py) {
   });
 }
 
-
 // ═══════════════════════════════════════════
 //  BATTLE UI
 // ═══════════════════════════════════════════
@@ -1569,9 +1606,6 @@ function showBattleUI(battleId, opponentName, question) {
   const overlay = document.getElementById('battle-overlay');
   document.getElementById('battle-opponent-name').textContent = opponentName;
   document.getElementById('question-text').textContent = question.text;
-
-  // 記錄當前 battleId，讓 submitAnswer 可以過濾舊的呼叫
-  state.currentBattleId = battleId;
 
   const grid = document.getElementById('options-grid');
   grid.innerHTML = '';
@@ -1597,34 +1631,20 @@ function showBattleUI(battleId, opponentName, question) {
   });
 
   state.battleTimerRef = setTimeout(() => {
-    if(state.inBattle && state.currentBattleId === battleId) {
-      submitAnswer(battleId, null, null, grid);
-    }
+    if(state.inBattle) submitAnswer(battleId, null, null, grid);
   }, CFG.BATTLE_MS);
 }
 
 function submitAnswer(battleId, answerId, clickedBtn, grid) {
   if(!state.inBattle) return;
-  if(state.currentBattleId !== battleId) return;  // 舊 battleId 的 callback，忽略
   clearTimeout(state.battleTimerRef);
-  state.inBattle = false;   // 立即鎖住，防止重複送出
   if(clickedBtn) clickedBtn.classList.add('selected');
   grid.querySelectorAll('.option-btn').forEach(b => b.disabled = true);
   socket.emit('battle:answer', { battleId, answerId, clientTimestamp: Date.now() });
 }
 
-function hideBattleUI({ battleId, winnerId, loserId, correctAnswer, loserNewHp, loserEliminated }) {
-  const isCurrent = (battleId === state.currentBattleId);
-
-  // 只有當前局的結果才能修改 inBattle 狀態
-  // 舊局的延遲結果不應干擾新一場對戰
-  if(isCurrent) {
-    document.getElementById('battle-overlay').classList.remove('active');
-    state.inBattle = false;
-    clearTimeout(state.battleTimerRef);
-  }
-
-  if(!isCurrent) return;  // 舊局結果，完全忽略
+function hideBattleUI({ winnerId, loserId, correctAnswer, loserNewHp, loserEliminated }) {
+  document.getElementById('battle-overlay').classList.remove('active');
 
   // Mark correct/wrong options
   const grid = document.getElementById('options-grid');
