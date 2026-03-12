@@ -673,6 +673,7 @@ function startGame(room) {
     walls:    room.mapObj.data?.walls   || [],
     spawns:   room.mapObj.data?.spawns  || [],
     portals:  room.mapObj.data?.portals || [],
+    terrain:  room.mapObj.data?.terrain || [],
   } : null;
   io.to(room.id).emit('map:load', { mapData: mapPayload });
 
@@ -1443,9 +1444,10 @@ io.on('connection', socket => {
         cols:    room.mapObj.cols,
         rows:    room.mapObj.rows,
         tileSize:room.mapObj.tileSize,
-        walls:   room.mapObj.data?.walls  || [],
+        walls:   room.mapObj.data?.walls   || [],
         spawns:  room.mapObj.data?.spawns  || [],
         portals: room.mapObj.data?.portals || [],
+        terrain: room.mapObj.data?.terrain || [],
       } : null,
     });
     toTeachers(room.id,'teacher:player_joined',{
