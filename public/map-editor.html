@@ -673,11 +673,12 @@ function loadTileset() {
 
 function buildTileCache() {
   if (!tilesetLoaded) return;
+  const CACHE_SIZE = 64; // 統一用 64×64，所有 drawImage 目標尺寸一致
   for (const pack of Object.values(PACKS)) {
     for (const tile of pack.tiles) {
-      const oc = new OffscreenCanvas(tile.sw, tile.sh);
+      const oc = new OffscreenCanvas(CACHE_SIZE, CACHE_SIZE);
       const octx = oc.getContext('2d');
-      octx.drawImage(tilesetImg, tile.sx, tile.sy, tile.sw, tile.sh, 0, 0, tile.sw, tile.sh);
+      octx.drawImage(tilesetImg, tile.sx, tile.sy, tile.sw, tile.sh, 0, 0, CACHE_SIZE, CACHE_SIZE);
       tileCache.set(tile.id, oc);
     }
   }
@@ -735,17 +736,16 @@ function renderTileGrid() {
     item.className = 'tile-item' + (tile.id === selectedTileId ? ' selected' : '') + (!tile.wall ? ' walkable' : '');
     item.title = `${tile.name}\n${tile.wall ? '🧱 有牆壁' : '✅ 可通行'}`;
 
-    // Draw tile preview
+    // Draw tile preview from cache
     const cv = document.createElement('canvas');
-    cv.width = tile.sw;
-    cv.height = tile.sh;
+    cv.width = 64; cv.height = 64;
     const cctx = cv.getContext('2d');
-    if (tilesetLoaded) {
-      cctx.drawImage(tilesetImg, tile.sx, tile.sy, tile.sw, tile.sh, 0, 0, tile.sw, tile.sh);
+    const cached0 = tileCache.get(tile.id);
+    if (cached0) {
+      cctx.drawImage(cached0, 0, 0, 64, 64);
     } else {
-      // Placeholder color
       cctx.fillStyle = tile.wall ? '#3d4f5c' : '#2d4a2d';
-      cctx.fillRect(0, 0, tile.sw, tile.sh);
+      cctx.fillRect(0, 0, 64, 64);
     }
     item.appendChild(cv);
 
@@ -777,12 +777,10 @@ function selectTile(id) {
   const preview = document.getElementById('selected-tile-preview');
   preview.innerHTML = '';
   const cv = document.createElement('canvas');
-  cv.width = tile.sw;
-  cv.height = tile.sh;
+  cv.width = 64; cv.height = 64;
   const cctx = cv.getContext('2d');
-  if (tilesetLoaded) {
-    cctx.drawImage(tilesetImg, tile.sx, tile.sy, tile.sw, tile.sh, 0, 0, tile.sw, tile.sh);
-  }
+  const cached1 = tileCache.get(tile.id);
+  if (cached1) cctx.drawImage(cached1, 0, 0, 64, 64);
   preview.appendChild(cv);
 
   document.getElementById('sel-tile-name').textContent = tile.name;
@@ -837,11 +835,7 @@ function draw() {
       const tile = getTileDef(tileId);
       if (!tile) return;
       const cached = tileCache.get(tileId);
-      if (cached) {
-        ctx.drawImage(cached, gx*ts, gy*ts, ts, ts);
-      } else {
-        ctx.drawImage(tilesetImg, tile.sx, tile.sy, tile.sw, tile.sh, gx*ts, gy*ts, ts, ts);
-      }
+      if (cached) ctx.drawImage(cached, gx*ts, gy*ts, ts, ts);
       // Tint wall tiles slightly red, walkable slightly green
       if (tile.wall) {
         ctx.fillStyle = 'rgba(239,68,68,0.18)';
