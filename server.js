@@ -633,11 +633,49 @@ function knockback(pA, pB, d) {
   const dx=pB.x-pA.x, dy=pB.y-pA.y;
   const len=Math.hypot(dx,dy)||1;
   const nx=dx/len, ny=dy/len;
-  const cl=(v,mn,mx)=>Math.max(mn,Math.min(mx,v));
-  const p=24;
+
+  // Walk along knockback direction in small steps, stop before entering a wall
+  function safeSlide(player, dirX, dirY, dist) {
+    const room  = player.roomId ? rooms.get(player.roomId) : null;
+    const ts2   = room?.mapObj?.tileSize || 32;
+    const wSet  = room?.wallSet;
+    const STEP  = ts2 * 0.4;           // step size ~40% of tile
+    const PAD   = 20;                  // player half-width for collision
+    const steps = Math.ceil(dist / STEP);
+    let cx = player.x, cy = player.y;
+
+    for (let i = 0; i < steps; i++) {
+      const remaining = dist - i * STEP;
+      const move = Math.min(STEP, remaining);
+      const tx = Math.max(PAD, Math.min(CONFIG.MAP_W - PAD, cx + dirX * move));
+      const ty = Math.max(PAD, Math.min(CONFIG.MAP_H - PAD, cy + dirY * move));
+
+      // Check wall collision at new position
+      let blocked = false;
+      if (wSet && wSet.size > 0) {
+        const gx = Math.floor(tx / ts2);
+        const gy = Math.floor(ty / ts2);
+        outer: for (let dy2 = -1; dy2 <= 1; dy2++) {
+          for (let dx2 = -1; dx2 <= 1; dx2++) {
+            if (wSet.has((gx+dx2)+','+(gy+dy2))) {
+              const wx = (gx+dx2)*ts2, wy = (gy+dy2)*ts2;
+              if (tx+PAD > wx && tx-PAD < wx+ts2 && ty+PAD > wy && ty-PAD < wy+ts2) {
+                blocked = true; break outer;
+              }
+            }
+          }
+        }
+      }
+
+      if (blocked) break;   // stop before the wall
+      cx = tx; cy = ty;
+    }
+    return { x: cx, y: cy };
+  }
+
   return {
-    newA:{ x:cl(pA.x-nx*d,p,CONFIG.MAP_W-p), y:cl(pA.y-ny*d,p,CONFIG.MAP_H-p) },
-    newB:{ x:cl(pB.x+nx*d,p,CONFIG.MAP_W-p), y:cl(pB.y+ny*d,p,CONFIG.MAP_H-p) },
+    newA: safeSlide(pA, -nx, -ny, d),
+    newB: safeSlide(pB,  nx,  ny, d),
   };
 }
 
