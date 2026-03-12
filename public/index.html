@@ -1124,34 +1124,46 @@ function initPhaserGame() {
       this.physics.world.setBounds(0,0,CFG.MAP_W,CFG.MAP_H);
 
       // ── 牆壁碰撞群組（地圖有牆時建立）──────────────────────
+      // ── Depth 層次：0 地面 | 1 小路 | 2 地形素材 | 3 牆壁 | 4 預設樹 | 5 縮圈 | 9+ 玩家 ──
       this.wallGroup = this.physics.add.staticGroup();
-      this.wallGfx   = this.add.graphics().setDepth(2);
-      if (state.mapData && state.mapData.walls.length > 0) {
-        this._buildWalls();
-      }
+      this.wallGfx   = this.add.graphics().setDepth(3);  // 牆壁在地形之上
 
       // 地面
       this.add.tileSprite(0,0,CFG.MAP_W,CFG.MAP_H,'ground').setOrigin(0,0).setDepth(0);
 
-      // 小路十字
-      this.add.tileSprite(CFG.MAP_W/2,0, 80,CFG.MAP_H,'path').setOrigin(0.5,0).setDepth(1);
-      this.add.tileSprite(0,CFG.MAP_H/2, CFG.MAP_W,80,'path').setOrigin(0,0.5).setDepth(1);
+      // 小路十字（無地形資料時才顯示）
+      if (!state.mapData || !state.mapData.terrain || state.mapData.terrain.length === 0) {
+        this.add.tileSprite(CFG.MAP_W/2,0, 80,CFG.MAP_H,'path').setOrigin(0.5,0).setDepth(1);
+        this.add.tileSprite(0,CFG.MAP_H/2, CFG.MAP_W,80,'path').setOrigin(0,0.5).setDepth(1);
+      }
 
-      // 樹木
-      const rng = new Phaser.Math.RandomDataGenerator(['tr42']);
-      const treeGfx = this.add.graphics().setDepth(3);
-      for(let i=0;i<220;i++){
-        const tx=rng.between(80,CFG.MAP_W-80), ty=rng.between(80,CFG.MAP_H-80), tr=rng.between(12,28);
-        treeGfx.fillStyle(rng.pick([0x3d7a1a,0x4a8f20,0x52a028]),1);
-        treeGfx.fillCircle(tx,ty,tr);
-        treeGfx.fillStyle(rng.pick([0x5aa832,0x68c040,0x72c840]),0.85);
-        treeGfx.fillCircle(tx-tr*0.2,ty-tr*0.25,tr*0.62);
-        treeGfx.fillStyle(0x7a4f2a,1);
-        treeGfx.fillRect(tx-3,ty+tr-4,6,8);
+      // ── 地形素材層（depth 2，在牆壁之下）──
+      this.terrainGfx = this.add.graphics().setDepth(2);
+      this._buildTerrain();
+
+      // 牆壁（必須在地形之後建立，depth 3）
+      if (state.mapData && state.mapData.walls.length > 0) {
+        this._buildWalls();
+      }
+
+      // 預設樹木（無地形資料時才顯示）
+      const hasTerrainData = state.mapData && state.mapData.terrain && state.mapData.terrain.length > 0;
+      if (!hasTerrainData) {
+        const rng = new Phaser.Math.RandomDataGenerator(['tr42']);
+        const treeGfx = this.add.graphics().setDepth(4);
+        for(let i=0;i<220;i++){
+          const tx=rng.between(80,CFG.MAP_W-80), ty=rng.between(80,CFG.MAP_H-80), tr=rng.between(12,28);
+          treeGfx.fillStyle(rng.pick([0x3d7a1a,0x4a8f20,0x52a028]),1);
+          treeGfx.fillCircle(tx,ty,tr);
+          treeGfx.fillStyle(rng.pick([0x5aa832,0x68c040,0x72c840]),0.85);
+          treeGfx.fillCircle(tx-tr*0.2,ty-tr*0.25,tr*0.62);
+          treeGfx.fillStyle(0x7a4f2a,1);
+          treeGfx.fillRect(tx-3,ty+tr-4,6,8);
+        }
       }
 
       // 縮圈圖形
-      this.zoneGfx = this.add.graphics().setDepth(4);
+      this.zoneGfx = this.add.graphics().setDepth(5);
 
       // ── 主角 ──
       // 使用伺服器分配的隨機出生點（state.spawnX/Y），若尚未收到則 fallback 到中心
@@ -1386,6 +1398,45 @@ function initPhaserGame() {
       this._drawFog();
       this._drawZone();
       this._drawMinimap();
+    }
+
+    _buildTerrain() {
+      // 以純色塊代表地形（地形圖片在地圖編輯器裡有圖，遊戲端用色塊代替）
+      if (!state.mapData || !state.mapData.terrain) return;
+      const { terrain, tileSize } = state.mapData;
+      const ts = tileSize || 32;
+      const gfx = this.terrainGfx;
+      gfx.clear();
+
+      // 顏色對照表（依 tileId 前綴判斷）
+      const TILE_COLORS = {
+        g: 0x4a8c28, w: 0x1a6eb5, m: 0x7a6048,
+        t: 0x2d6b1a, f: 0x1e5010, b: 0xb07040,
+        r: 0xc8a84e, v: 0xb07040,
+      };
+      const TILE_LIGHT = {
+        g: 0x62aa38, w: 0x2d90e0, m: 0x9a8060,
+        t: 0x3d8a24, f: 0x2a6818, b: 0xc88050,
+        r: 0xd8b860, v: 0xc88050,
+      };
+
+      terrain.forEach(([gx, gy, tileId]) => {
+        const px = gx * ts, py = gy * ts;
+        const prefix = (tileId || 'g')[0];
+        const base  = TILE_COLORS[prefix] || 0x4a8c28;
+        const light = TILE_LIGHT[prefix]  || 0x62aa38;
+
+        gfx.fillStyle(base, 1);
+        gfx.fillRect(px, py, ts, ts);
+
+        // 上方高光（立體感）
+        gfx.fillStyle(light, 0.35);
+        gfx.fillRect(px, py, ts, Math.max(2, Math.floor(ts * 0.2)));
+
+        // 下方陰影
+        gfx.fillStyle(0x000000, 0.12);
+        gfx.fillRect(px, py + Math.floor(ts * 0.8), ts, Math.ceil(ts * 0.2));
+      });
     }
 
     _buildWalls() {
