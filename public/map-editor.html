@@ -329,15 +329,15 @@ input[type=range]::-webkit-slider-thumb {
       </div>
       <div class="size-row" style="margin-bottom:8px">
         <span class="size-label">欄數</span>
-        <input type="range" id="cols-range" min="10" max="80" value="40"
+        <input type="range" id="cols-range" min="10" max="150" value="150"
                oninput="changeGridSize(parseInt(this.value), mapRows)">
-        <span class="size-val" id="cols-val">40</span>
+        <span class="size-val" id="cols-val">150</span>
       </div>
       <div class="size-row">
         <span class="size-label">列數</span>
-        <input type="range" id="rows-range" min="10" max="80" value="30"
+        <input type="range" id="rows-range" min="10" max="150" value="150"
                oninput="changeGridSize(mapCols, parseInt(this.value))">
-        <span class="size-val" id="rows-val">30</span>
+        <span class="size-val" id="rows-val">150</span>
       </div>
     </div>
 
@@ -414,7 +414,7 @@ input[type=range]::-webkit-slider-thumb {
         <div>出生點：<span id="stat-spawns" style="color:var(--green)">0</span></div>
         <div>牆壁格：<span id="stat-walls" style="color:#94a3b8">0</span></div>
         <div>傳送門：<span id="stat-portals" style="color:var(--purple)">0</span></div>
-        <div>格子大小：<span id="stat-grid" style="color:var(--amber)">40×30</span></div>
+        <div>格子大小：<span id="stat-grid" style="color:var(--amber)">150×150</span></div>
       </div>
     </div>
 
@@ -459,8 +459,8 @@ input[type=range]::-webkit-slider-thumb {
 // ════════════════════════════════════════════════
 //  STATE
 // ════════════════════════════════════════════════
-let mapCols   = 40;
-let mapRows   = 30;
+let mapCols   = 150;
+let mapRows   = 150;
 let tileSize  = 32;
 let tool      = 'wall';
 let brushSize = 1;
@@ -906,7 +906,7 @@ function updateStats() {
   document.getElementById('stat-spawns').textContent  = spawns.size;
   document.getElementById('stat-walls').textContent   = walls.size;
   document.getElementById('stat-portals').textContent = portals.length;
-  document.getElementById('stat-grid').textContent    = `${mapCols}×${mapRows}`;
+  document.getElementById('stat-grid').textContent    = `${mapCols}×${mapRows} (${mapCols*tileSize}×${mapRows*tileSize}px)`;
 }
 
 // ════════════════════════════════════════════════
@@ -983,7 +983,7 @@ function loadMapData(mapObj) {
 function newMap() {
   currentMapId = null;
   walls = new Set(); spawns = new Set(); portals = []; zoneCenter = null;
-  mapCols=40; mapRows=30; tileSize=32;
+  mapCols=150; mapRows=150; tileSize=32;
   zoneStages = [
     { at:0,radius:800},{at:60,radius:600},{at:120,radius:400},
     {at:180,radius:200},{at:240,radius:80},
@@ -993,10 +993,10 @@ function newMap() {
   document.getElementById('auto-fill-bots').checked = true;
   document.getElementById('zone-cx').value = '';
   document.getElementById('zone-cy').value = '';
-  document.getElementById('cols-range').value = 40;
-  document.getElementById('rows-range').value = 30;
-  document.getElementById('cols-val').textContent = 40;
-  document.getElementById('rows-val').textContent = 30;
+  document.getElementById('cols-range').value = 150;
+  document.getElementById('rows-range').value = 150;
+  document.getElementById('cols-val').textContent = 150;
+  document.getElementById('rows-val').textContent = 150;
   document.getElementById('tile-size-range').value = 32;
   document.getElementById('tile-size-val').textContent = 32;
   renderZoneStages(); renderPortalList(); updateStats(); centerView(); draw();
