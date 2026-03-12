@@ -1320,16 +1320,22 @@ function initPhaserGame() {
     onBattleResult(result) { hideBattleUI(result); }
 
     onKnockback(pos) {
-      // 先殺掉舊的 knockback tween，防止舊的 onComplete 覆蓋新的 battle 狀態
+      // 停掉舊 tween，改用物理速度推，讓 Phaser 碰撞自然解算，不穿牆
       this.tweens.killTweensOf(this.localPlayer);
-      this.tweens.add({
-        targets: this.localPlayer, x:pos.x, y:pos.y,
-        duration:380, ease:'Back.easeOut',
-        onComplete: () => {
-          state.isLocked = false;
-          // 注意：不在這裡清 inBattle，inBattle 由 hideBattleUI 和 submitAnswer 管理
-          // 避免新一場對戰的 inBattle=true 被舊 tween 的 onComplete 蓋掉
-        },
+
+      const sp = this.localPlayer;
+      const dx = pos.x - sp.x;
+      const dy = pos.y - sp.y;
+      const dist = Math.hypot(dx, dy) || 1;
+
+      // 速度方向 × 強度（px/s），時間約 350ms 自然衰減
+      const SPEED = 900;
+      sp.setVelocity((dx / dist) * SPEED, (dy / dist) * SPEED);
+
+      // 350ms 後停速，解鎖玩家
+      this.time.delayedCall(350, () => {
+        if (sp.active) sp.setVelocity(0, 0);
+        state.isLocked = false;
       });
     }
 
