@@ -1446,28 +1446,38 @@ function initPhaserGame() {
       const gfx = this.wallGfx;
       gfx.clear();
 
+      // Build a Set of terrain tile positions — these already have visual from _buildTerrain
+      // so we skip drawing gray bricks on them (only add physics body)
+      const terrainSet = new Set(
+        (state.mapData.terrain || []).map(([gx, gy]) => gx + ',' + gy)
+      );
+
       // Precompute neighbor set for top-edge detection
       const wSet = state.wallTiles;
 
       walls.forEach(([gx, gy]) => {
         const px = gx * ts, py = gy * ts;
+        const key = gx + ',' + gy;
 
-        // Base stone fill
-        gfx.fillStyle(0x3d4f5c, 1);
-        gfx.fillRect(px, py, ts, ts);
+        // Only draw gray brick visual for MANUAL walls (not terrain-based walls)
+        if (!terrainSet.has(key)) {
+          // Base stone fill
+          gfx.fillStyle(0x3d4f5c, 1);
+          gfx.fillRect(px, py, ts, ts);
 
-        // Top highlight (only if no wall above)
-        if (!wSet.has(gx+','+(gy-1))) {
-          gfx.fillStyle(0x6b8394, 1);
-          gfx.fillRect(px+1, py+1, ts-2, 3);
+          // Top highlight (only if no wall above)
+          if (!wSet.has(gx+','+(gy-1))) {
+            gfx.fillStyle(0x6b8394, 1);
+            gfx.fillRect(px+1, py+1, ts-2, 3);
+          }
+
+          // Inner shadow bottom-right
+          gfx.fillStyle(0x1e2d35, 0.5);
+          gfx.fillRect(px+ts-3, py, 3, ts);
+          gfx.fillRect(px, py+ts-3, ts, 3);
         }
 
-        // Inner shadow bottom-right
-        gfx.fillStyle(0x1e2d35, 0.5);
-        gfx.fillRect(px+ts-3, py, 3, ts);
-        gfx.fillRect(px, py+ts-3, ts, 3);
-
-        // Physics body (invisible rectangle)
+        // Physics body always added regardless (collision still needed)
         const body = this.add.rectangle(px+ts/2, py+ts/2, ts, ts)
           .setVisible(false);
         this.physics.add.existing(body, true); // true = static
