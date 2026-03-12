@@ -869,6 +869,11 @@ function setupSocketEvents() {
     } else {
       state.mapData = null; state.wallTiles = null;
     }
+    // 若 Phaser 場景已存在（遊戲進行中才收到 map:load），立即重建地形和牆壁
+    if (gameScene) {
+      gameScene._buildTerrain();
+      gameScene._buildWalls();
+    }
   });
 
   socket.on('game:countdown', () => {
@@ -1406,6 +1411,9 @@ function clientWallCheck(px, py) {
       const ts = tileSize || 32;
       const gfx = this.wallGfx;
       gfx.clear();
+
+      // 清掉舊的物理碰撞體（重複呼叫時避免疊加）
+      this.wallGroup.clear(true, true);
 
       // Build a Set of terrain tile positions — these already have visual from _buildTerrain
       // so we skip drawing gray bricks on them (only add physics body)
