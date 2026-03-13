@@ -975,16 +975,33 @@ function resolveBattle(room, battle, isTimeout) {
   const ansB = battle.answers.get(pB.id);
   let winnerId=null, loserId=null;
 
-  if(!isTimeout || battle.answers.size>0){
-    const aC = ansA?.isCorrect||false;
-    const bC = ansB?.isCorrect||false;
-    if(aC&&!bC)       { winnerId=pA.id; loserId=pB.id; }
-    else if(!aC&&bC)  { winnerId=pB.id; loserId=pA.id; }
-    else if(aC&&bC)   {
-      if((ansA.serverTime||Infinity)<=(ansB.serverTime||Infinity)){ winnerId=pA.id; loserId=pB.id; }
-      else { winnerId=pB.id; loserId=pA.id; }
+  {
+    const aC = ansA?.isCorrect || false;
+    const bC = ansB?.isCorrect || false;
+    const aAnswered = battle.answers.has(pA.id);
+    const bAnswered = battle.answers.has(pB.id);
+
+    if (isTimeout) {
+      // 超時規則：有答對的贏沒答的；兩個都沒答/都答錯→平局；都答對比時間
+      if (aC && !bAnswered)      { winnerId=pA.id; loserId=pB.id; }
+      else if (bC && !aAnswered) { winnerId=pB.id; loserId=pA.id; }
+      else if (aC && !bC)        { winnerId=pA.id; loserId=pB.id; }
+      else if (!aC && bC)        { winnerId=pB.id; loserId=pA.id; }
+      else if (aC && bC) {
+        if((ansA.serverTime||Infinity)<=(ansB.serverTime||Infinity)){ winnerId=pA.id; loserId=pB.id; }
+        else { winnerId=pB.id; loserId=pA.id; }
+      }
+      // 兩者都沒答或都答錯 → 平局，但各扣一滴血
+      if (!winnerId) { loserId = null; } // draw, handle below
+    } else {
+      if(aC&&!bC)       { winnerId=pA.id; loserId=pB.id; }
+      else if(!aC&&bC)  { winnerId=pB.id; loserId=pA.id; }
+      else if(aC&&bC)   {
+        if((ansA.serverTime||Infinity)<=(ansB.serverTime||Infinity)){ winnerId=pA.id; loserId=pB.id; }
+        else { winnerId=pB.id; loserId=pA.id; }
+      }
+      // both wrong → draw
     }
-    // both wrong/timeout → draw
   }
 
   // Stats
@@ -1007,7 +1024,7 @@ function resolveBattle(room, battle, isTimeout) {
   if(loserId&&battle.answers.get(loserId)&&!battle.answers.get(loserId).isCorrect) qst.wrong++;
   if(loserId&&!battle.answers.has(loserId)) qst.timeout++;
 
-  // Damage
+  // Damage — loser takes 1HP; on draw (timeout, both wrong/unanswered) both take 1HP
   let loserNewHp=null, loserElim=false;
   if(loserId){
     const loser=room.players.get(loserId);
@@ -1016,6 +1033,14 @@ function resolveBattle(room, battle, isTimeout) {
     io.to(room.id).emit('player:hp_update',{ playerId:loserId, newHp:loserNewHp });
     toTeachers(room.id,'teacher:hp_update',{ playerId:loserId, newHp:loserNewHp });
     if(loser.hp<=0) loserElim=true;
+  } else if(isTimeout && !winnerId) {
+    // Draw on timeout: both lose 1HP
+    [pA, pB].forEach(p => {
+      p.hp = Math.max(0, p.hp-1);
+      io.to(room.id).emit('player:hp_update',{ playerId:p.id, newHp:p.hp });
+      toTeachers(room.id,'teacher:hp_update',{ playerId:p.id, newHp:p.hp });
+    });
+    loserNewHp = null; // signal draw to client
   }
   if(winnerId){ const w=room.players.get(winnerId); if(w) w.wins=(w.wins||0)+1; }
 
