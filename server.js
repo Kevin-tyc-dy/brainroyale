@@ -756,7 +756,7 @@ function broadcastWorld(room) {
       if(p.id===viewer.id) return;
       // Spectators see all; alive players limited by fog
       if(viewer.isAlive && dist(viewer,p) > CONFIG.FOG_RADIUS) return;
-      list.push({ id:p.id, name:p.name, x:p.x, y:p.y, hp:p.hp, isAlive:p.isAlive });
+      list.push({ id:p.id, name:p.name, x:p.x, y:p.y, hp:p.hp, isAlive:p.isAlive, isBot:!!p.isBot });
     });
     io.to(viewer.id).emit('world:update',{ players:list, aliveCount:alive });
   });
