@@ -1,4 +1,8 @@
-<!DOCTYPE html>
+
+.result-main.draw {
+  color: #f0c040;
+  text-shadow: 0 0 20px rgba(240,192,64,0.8);
+}<!DOCTYPE html>
 <html lang="zh-TW">
 <head>
 <meta charset="UTF-8">
@@ -1789,21 +1793,35 @@ function hideBattleUI({ winnerId, loserId, correctAnswer, loserNewHp, loserElimi
   const toast = document.getElementById('battle-result-toast');
   const main  = document.getElementById('result-main');
   const sub   = document.getElementById('result-sub');
-  const iWin  = winnerId === state.myId;
 
-  main.className   = 'result-main ' + (iWin ? 'win' : 'lose');
-  main.textContent = iWin ? 'WIN' : 'LOSE';
-  sub.textContent  = iWin
-    ? '答題正確！對手失去一滴血 ❤'
-    : (loserNewHp !== null ? `失去一滴血，剩餘 ${loserNewHp} 滴` : '超時未作答');
+  const iWin  = winnerId === state.myId;
+  const iLose = loserId  === state.myId;
+  const isDraw = !winnerId && !loserId;  // 雙方都沒答或都答錯
+
+  if (isDraw) {
+    main.className   = 'result-main draw';
+    main.textContent = 'DRAW';
+    sub.textContent  = '雙方均未答對，平局';
+  } else if (iWin) {
+    main.className   = 'result-main win';
+    main.textContent = 'WIN';
+    sub.textContent  = '答題正確！對手失去一滴血 ❤';
+  } else if (iLose) {
+    main.className   = 'result-main lose';
+    main.textContent = 'LOSE';
+    sub.textContent  = loserNewHp !== null
+      ? `失去一滴血，剩餘 ${loserNewHp} 滴`
+      : '超時未作答，失去一滴血';
+  } else {
+    // 觀戰者或其他情況
+    main.className   = 'result-main';
+    main.textContent = winnerId ? 'WIN' : 'DRAW';
+    sub.textContent  = '';
+  }
 
   toast.classList.add('show');
-
-  if(loserEliminated && loserId === state.myId) {
-    setTimeout(()=>{ toast.classList.remove('show'); }, 1600);
-  } else {
-    setTimeout(()=>{ toast.classList.remove('show'); }, 2400);
-  }
+  setTimeout(()=>{ toast.classList.remove('show'); },
+    (loserEliminated && iLose) ? 1600 : 2400);
 }
 
 // ═══════════════════════════════════════════
