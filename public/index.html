@@ -972,9 +972,10 @@ function initPhaserGame() {
       window._lighten = lighten; // expose for create()
 
       function drawCharFrame(ctx, skinColor, shirtColor, pantsColor, legPhase) {
+        const OY = 2; // 2px top padding; shoe bottom (42+2=44) = canvas bottom
         const p = (x,y,w,h,c,a=1) => {
           ctx.globalAlpha = a; ctx.fillStyle = c;
-          ctx.fillRect(x, y, w, h); ctx.globalAlpha = 1;
+          ctx.fillRect(x, OY+y, w, h); ctx.globalAlpha = 1;
         };
         const swing = Math.sin(legPhase * Math.PI * 2 / 8);
         const lLegY = 28 + Math.round(swing * 4);
@@ -1006,10 +1007,10 @@ function initPhaserGame() {
       }
       window._drawCharFrame = drawCharFrame; // expose for create()
 
-      // ── Generate 8 hero frames (independent 48×48 canvas each) ──
+      // ── Generate 8 hero frames (48w × 44h: shoe bottom = canvas bottom) ──
       for (let i = 0; i < 8; i++) {
         const cv = document.createElement('canvas');
-        cv.width = cv.height = 48;
+        cv.width = 48; cv.height = 44;
         drawCharFrame(cv.getContext('2d'), '#f4a261','#3a7bd5','#2d3a7c', i);
         this.textures.addCanvas('hero_f' + i, cv);
       }
@@ -1017,14 +1018,14 @@ function initPhaserGame() {
       // ── Generate 8 enemy frames ──
       for (let i = 0; i < 8; i++) {
         const cv = document.createElement('canvas');
-        cv.width = cv.height = 48;
+        cv.width = 48; cv.height = 44;
         drawCharFrame(cv.getContext('2d'), '#e8956d','#c0392b','#5d1a1a', i);
         this.textures.addCanvas('enemy_f' + i, cv);
       }
 
       // ── Ghost (eliminated) ──
       const gc = document.createElement('canvas');
-      gc.width = gc.height = 48;
+      gc.width = 48; gc.height = 44;
       const gctx = gc.getContext('2d');
       gctx.globalAlpha = 0.35;
       drawCharFrame(gctx, '#aaaaaa','#888888','#666666', 0);
@@ -1114,7 +1115,7 @@ function initPhaserGame() {
       const cy = state.spawnY || CFG.MAP_H/2;
 
       // Shadow (depth just below player)
-      this.playerShadow = this.add.image(cx, cy+22, 'shadow').setDepth(9).setAlpha(0.7);
+      this.playerShadow = this.add.image(cx, cy, 'shadow').setDepth(9).setAlpha(0.7);
 
       // Hero sprite — start with idle texture
       this.localPlayer = this.physics.add.image(cx, cy, 'hero_f0')
@@ -1214,7 +1215,7 @@ function initPhaserGame() {
     }
 
     _spawnRemote(p) {
-      const shadow   = this.add.image(p.x, p.y+22, 'shadow').setDepth(8).setAlpha(0.55);
+      const shadow   = this.add.image(p.x, p.y, 'shadow').setDepth(8).setAlpha(0.55);
       const texKey   = p.isBot ? 'enemy_f0' : 'enemy_f0';  // both same, differentiated by tint
       const sprite   = this.add.image(p.x, p.y, texKey).setDepth(9).setOrigin(0.5, 1);
       if (p.isBot) sprite.setTint(0xaaddff);  // bots have light blue tint
@@ -1395,13 +1396,13 @@ function initPhaserGame() {
 
       // Shadow follows player
       if(this.playerShadow){
-        this.playerShadow.setPosition(this.localPlayer.x, this.localPlayer.y+22);
+        this.playerShadow.setPosition(this.localPlayer.x, this.localPlayer.y-2);
         // squish shadow when moving
         this.playerShadow.setScale(moving?1.1:0.9, moving?0.7:0.9);
       }
 
       // Name label
-      this.localLabel.setPosition(this.localPlayer.x, this.localPlayer.y-36);
+      this.localLabel.setPosition(this.localPlayer.x, this.localPlayer.y-48);
 
       // Sync to server
       if(time - this.lastSync > CFG.SYNC_MS && !state.isLocked && !this.isPaused && state.isAlive) {
@@ -1447,8 +1448,8 @@ function initPhaserGame() {
           else { rp.sprite.y += dy * LERP; }
           // apply flip direction from server update
           if(rp.flipDir !== undefined) rp.sprite.setFlipX(rp.flipDir);
-          rp.nameText.setPosition(rp.sprite.x, rp.sprite.y - 36);
-          if(rp.shadow) rp.shadow.setPosition(rp.sprite.x, rp.sprite.y + 22);
+          rp.nameText.setPosition(rp.sprite.x, rp.sprite.y - 48);
+          if(rp.shadow) rp.shadow.setPosition(rp.sprite.x, rp.sprite.y - 2);
         }
         if(!rp.isAlive) return;
         const d=Math.hypot(rp.sprite.x-mx, rp.sprite.y-my);
