@@ -960,75 +960,8 @@ function initPhaserGame() {
     }
 
     preload() {
-      // ── Draw all textures via canvas (no external assets needed) ──
-      const FRAME_W = 48, FRAME_H = 48, FRAMES = 8;
-
-      // ─── Helper: draw one pixel-art character frame onto a canvas context ───
-      // legPhase: 0..7 drives limb swing for run cycle
-      function drawCharFrame(ctx, ox, oy, skinColor, shirtColor, pantsColor, legPhase) {
-        const p = (x,y,w,h,c,a=1) => {
-          ctx.globalAlpha = a;
-          ctx.fillStyle = c;
-          ctx.fillRect(ox+x, oy+y, w, h);
-          ctx.globalAlpha = 1;
-        };
-        // shadow
-        p(10,42,28,4,'rgba(0,0,0,0.18)');
-
-        // ── legs (4 frames: stride left / right) ──
-        const swing = Math.sin(legPhase * Math.PI * 2 / FRAMES);
-        const lLegY = 28 + Math.round(swing * 4);   // left leg
-        const rLegY = 28 - Math.round(swing * 4);   // right leg (opposite)
-        // left shoe
-        p(12, lLegY+10, 7, 4, '#1a1a2e');
-        p(12, lLegY,    7, 11, pantsColor);
-        // right shoe
-        p(29, rLegY+10, 7, 4, '#1a1a2e');
-        p(29, rLegY,    7, 11, pantsColor);
-
-        // ── body / shirt ──
-        p(13, 20, 22, 14, shirtColor);
-        // collar highlight
-        p(15, 20, 18, 3, lighten(shirtColor));
-        // belt
-        p(13, 32, 22, 3, '#5c3a1e');
-
-        // ── arms (swing opposite to legs) ──
-        const armSwing = -swing;
-        const lArmY = 22 + Math.round(armSwing * 3);
-        const rArmY = 22 - Math.round(armSwing * 3);
-        // left arm
-        p(7,  lArmY, 7, 12, skinColor);
-        p(7,  lArmY+10, 7, 4, lighten(skinColor));
-        // right arm
-        p(34, rArmY, 7, 12, skinColor);
-        p(34, rArmY+10, 7, 4, lighten(skinColor));
-
-        // ── head ──
-        p(14, 4, 20, 18, skinColor);
-        // hair
-        p(14, 4,  20, 6, '#2c1810');
-        p(14, 4,  4,  10, '#2c1810');
-        // eyes
-        p(17, 12, 4, 4, '#ffffff');
-        p(27, 12, 4, 4, '#ffffff');
-        p(18, 13, 2, 2, '#222');
-        p(28, 13, 2, 2, '#222');
-        // mouth
-        p(20, 18, 8, 2, '#c0634a');
-        // ear
-        p(12, 11, 3, 5, skinColor);
-        p(33, 11, 3, 5, skinColor);
-
-        // ── backpack (self player only) ──
-        if (shirtColor === '#3a7bd5') {
-          p(35, 21, 8, 12, '#f0a500');
-          p(36, 33, 6, 3,  '#d4891a');
-        }
-      }
-
+      // ── Helper functions (defined here, accessible in create/update via closure) ──
       function lighten(hex) {
-        // simple lighten: parse and add 30 to each channel
         let c = hex.replace('#','');
         if(c.length===3) c=c.split('').map(x=>x+x).join('');
         const r=Math.min(255,parseInt(c.slice(0,2),16)+35);
@@ -1036,96 +969,100 @@ function initPhaserGame() {
         const b=Math.min(255,parseInt(c.slice(4,6),16)+35);
         return `rgb(${r},${g2},${b})`;
       }
+      window._lighten = lighten; // expose for create()
 
-      // ─── Generate self-player spritesheet (8 frames × 48px wide) ───
-      const selfCanvas = document.createElement('canvas');
-      selfCanvas.width  = FRAME_W * FRAMES;
-      selfCanvas.height = FRAME_H;
-      const sc = selfCanvas.getContext('2d');
-      for(let i=0;i<FRAMES;i++){
-        drawCharFrame(sc, i*FRAME_W, 0, '#f4a261','#3a7bd5','#2d3a7c', i);
+      function drawCharFrame(ctx, skinColor, shirtColor, pantsColor, legPhase) {
+        const p = (x,y,w,h,c,a=1) => {
+          ctx.globalAlpha = a; ctx.fillStyle = c;
+          ctx.fillRect(x, y, w, h); ctx.globalAlpha = 1;
+        };
+        const swing = Math.sin(legPhase * Math.PI * 2 / 8);
+        const lLegY = 28 + Math.round(swing * 4);
+        const rLegY = 28 - Math.round(swing * 4);
+        p(12, lLegY+10, 7, 4, '#1a1a2e');
+        p(12, lLegY,    7, 11, pantsColor);
+        p(29, rLegY+10, 7, 4, '#1a1a2e');
+        p(29, rLegY,    7, 11, pantsColor);
+        p(13, 20, 22, 14, shirtColor);
+        p(15, 20, 18,  3, lighten(shirtColor));
+        p(13, 32, 22,  3, '#5c3a1e');
+        const armSwing = -swing;
+        const lArmY = 22 + Math.round(armSwing * 3);
+        const rArmY = 22 - Math.round(armSwing * 3);
+        p(7,  lArmY,    7, 12, skinColor);
+        p(7,  lArmY+10, 7,  4, lighten(skinColor));
+        p(34, rArmY,    7, 12, skinColor);
+        p(34, rArmY+10, 7,  4, lighten(skinColor));
+        p(14, 4, 20, 18, skinColor);
+        p(14, 4, 20,  6, '#2c1810');
+        p(14, 4,  4, 10, '#2c1810');
+        p(17, 12, 4, 4, '#ffffff'); p(27, 12, 4, 4, '#ffffff');
+        p(18, 13, 2, 2, '#222');    p(28, 13, 2, 2, '#222');
+        p(20, 18, 8, 2, '#c0634a');
+        p(12, 11, 3, 5, skinColor); p(33, 11, 3, 5, skinColor);
+        if (shirtColor === '#3a7bd5') {
+          p(35, 21, 8, 12, '#f0a500'); p(36, 33, 6, 3, '#d4891a');
+        }
       }
-      this.textures.addCanvas('hero_sheet', selfCanvas);
+      window._drawCharFrame = drawCharFrame; // expose for create()
 
-      // ─── Generate idle frame for self (single frame) ───
-      const idleCanvas = document.createElement('canvas');
-      idleCanvas.width = FRAME_W; idleCanvas.height = FRAME_H;
-      const ic = idleCanvas.getContext('2d');
-      drawCharFrame(ic, 0, 0, '#f4a261','#3a7bd5','#2d3a7c', 0);
-      this.textures.addCanvas('hero_idle', idleCanvas);
-
-      // ─── Generate remote player spritesheet (red shirt) ───
-      const remoteCanvas = document.createElement('canvas');
-      remoteCanvas.width  = FRAME_W * FRAMES;
-      remoteCanvas.height = FRAME_H;
-      const rc = remoteCanvas.getContext('2d');
-      for(let i=0;i<FRAMES;i++){
-        // vary skin tone per player later; default enemy color
-        drawCharFrame(rc, i*FRAME_W, 0, '#e8956d','#c0392b','#5d1a1a', i);
+      // ── Generate 8 hero frames (independent 48×48 canvas each) ──
+      for (let i = 0; i < 8; i++) {
+        const cv = document.createElement('canvas');
+        cv.width = cv.height = 48;
+        drawCharFrame(cv.getContext('2d'), '#f4a261','#3a7bd5','#2d3a7c', i);
+        this.textures.addCanvas('hero_f' + i, cv);
       }
-      this.textures.addCanvas('enemy_sheet', remoteCanvas);
 
-      // ─── Ghost (eliminated) ───
-      const ghostCanvas = document.createElement('canvas');
-      ghostCanvas.width = FRAME_W; ghostCanvas.height = FRAME_H;
-      const ghost = ghostCanvas.getContext('2d');
-      ghost.globalAlpha = 0.35;
-      drawCharFrame(ghost, 0, 0, '#aaaaaa','#888888','#666666', 0);
-      ghost.globalAlpha = 1;
-      this.textures.addCanvas('pghost', ghostCanvas);
+      // ── Generate 8 enemy frames ──
+      for (let i = 0; i < 8; i++) {
+        const cv = document.createElement('canvas');
+        cv.width = cv.height = 48;
+        drawCharFrame(cv.getContext('2d'), '#e8956d','#c0392b','#5d1a1a', i);
+        this.textures.addCanvas('enemy_f' + i, cv);
+      }
 
-      // ─── Ground tile ───
-      const groundCanvas = document.createElement('canvas');
-      groundCanvas.width = groundCanvas.height = 48;
-      const gnd = groundCanvas.getContext('2d');
-      // bright daylight grass
+      // ── Ghost (eliminated) ──
+      const gc = document.createElement('canvas');
+      gc.width = gc.height = 48;
+      const gctx = gc.getContext('2d');
+      gctx.globalAlpha = 0.35;
+      drawCharFrame(gctx, '#aaaaaa','#888888','#666666', 0);
+      gctx.globalAlpha = 1;
+      this.textures.addCanvas('pghost', gc);
+
+      // ── Ground tile ──
+      const gndC = document.createElement('canvas');
+      gndC.width = gndC.height = 48;
+      const gnd = gndC.getContext('2d');
       gnd.fillStyle = '#5a8a30'; gnd.fillRect(0,0,48,48);
       gnd.fillStyle = '#4e7a28'; gnd.fillRect(0,0,24,24); gnd.fillRect(24,24,24,24);
       gnd.fillStyle = '#6da038';
       const grng = new Phaser.Math.RandomDataGenerator(['gr']);
-      for(let i=0;i<10;i++){
-        gnd.fillRect(grng.between(2,44),grng.between(2,44),2,grng.between(3,6));
-      }
-      // subtle pebbles
+      for(let i=0;i<10;i++) gnd.fillRect(grng.between(2,44),grng.between(2,44),2,grng.between(3,6));
       gnd.fillStyle = 'rgba(255,255,255,0.06)';
       gnd.fillRect(8,18,3,3); gnd.fillRect(32,10,2,2); gnd.fillRect(20,36,4,2);
-      this.textures.addCanvas('ground', groundCanvas);
+      this.textures.addCanvas('ground', gndC);
 
-      // ─── Path tile ───
-      const pathCanvas = document.createElement('canvas');
-      pathCanvas.width = pathCanvas.height = 48;
-      const pth = pathCanvas.getContext('2d');
+      // ── Path tile ──
+      const pthC = document.createElement('canvas');
+      pthC.width = pthC.height = 48;
+      const pth = pthC.getContext('2d');
       pth.fillStyle = '#a0845c'; pth.fillRect(0,0,48,48);
-      this.textures.addCanvas('path', pathCanvas);
+      this.textures.addCanvas('path', pthC);
 
-      // ─── Shadow under player ───
-      const shadowCanvas = document.createElement('canvas');
-      shadowCanvas.width = 36; shadowCanvas.height = 12;
-      const shd = shadowCanvas.getContext('2d');
+      // ── Shadow ──
+      const shdC = document.createElement('canvas');
+      shdC.width = 36; shdC.height = 12;
+      const shd = shdC.getContext('2d');
       const grad = shd.createRadialGradient(18,6,0,18,6,18);
       grad.addColorStop(0,'rgba(0,0,0,0.35)');
       grad.addColorStop(1,'rgba(0,0,0,0)');
       shd.fillStyle = grad; shd.fillRect(0,0,36,12);
-      this.textures.addCanvas('shadow', shadowCanvas);
+      this.textures.addCanvas('shadow', shdC);
     }
 
     create() {
-      const FRAME_W = 48, FRAMES = 8;
-
-      // ── Register animations ──
-      // Hero run (8 frames)
-      this.anims.create({
-        key: 'hero_run',
-        frames: Array.from({length:FRAMES},(_,i)=>({
-          key:'hero_sheet',
-          frame: null,
-          // We'll use manual frame via setTexture each step since addCanvas gives one texture
-        })),
-        frameRate: 10,
-        repeat: -1,
-      });
-      // We use a manual frame-stepping approach below (simpler with canvas textures)
-
       // World bounds
       this.physics.world.setBounds(0,0,CFG.MAP_W,CFG.MAP_H);
 
@@ -1180,18 +1117,15 @@ function initPhaserGame() {
       this.playerShadow = this.add.image(cx, cy+22, 'shadow').setDepth(9).setAlpha(0.7);
 
       // Hero sprite — start with idle texture
-      this.localPlayer = this.physics.add.sprite(cx, cy, 'hero_idle')
+      this.localPlayer = this.physics.add.image(cx, cy, 'hero_f0')
         .setCollideWorldBounds(true)
         .setDepth(10)
-        .setOrigin(0.5, 0.75); // anchor near feet
+        .setOrigin(0.5, 1);   // 腳底錨點，換幀時座標不偏移
+      this._heroFrame  = 0;
+      this._heroTick   = 0;
+      this._heroMoving = false;
 
-      // Direction/animation state
-      this._facing   = 'right'; // 'left' | 'right'
-      this._runFrame = 0;
-      this._runTick  = 0;
-      this._isMoving = false;
-      this._FRAME_W  = FRAME_W;
-      this._FRAMES   = FRAMES;
+      this._facing = 'right';
 
       // Name label
       this.localLabel = this.add.text(cx, cy-32, state.myName, {
@@ -1282,7 +1216,7 @@ function initPhaserGame() {
     _spawnRemote(p) {
       const shadow   = this.add.image(p.x, p.y+22, 'shadow').setDepth(8).setAlpha(0.55);
       const texKey   = p.isBot ? 'enemy_f0' : 'enemy_f0';  // both same, differentiated by tint
-      const sprite   = this.add.image(p.x, p.y, texKey).setDepth(9).setOrigin(0.5,0.75);
+      const sprite   = this.add.image(p.x, p.y, texKey).setDepth(9).setOrigin(0.5, 1);
       if (p.isBot) sprite.setTint(0xaaddff);  // bots have light blue tint
       const nameColor = p.isBot ? '#aaddff' : '#ffaaaa';
       const nameText = this.add.text(p.x, p.y-36, p.name||'?', {
@@ -1443,23 +1377,16 @@ function initPhaserGame() {
 
       const moving = (vx!==0||vy!==0) && state.isAlive && !state.isLocked;
 
-      // ── Run animation: step through hero_sheet frames ──
+      // ── Hero animation: independent canvas frames, no setCrop ──
       if(moving){
-        this._runTick++;
-        if(this._runTick % 4 === 0){          // every 4 game ticks → next frame
-          this._runFrame = (this._runFrame+1) % this._FRAMES;
-        }
-        const fx = this._runFrame * this._FRAME_W;
-        this.localPlayer.setTexture('hero_sheet').setCrop(fx,0,this._FRAME_W,48);
-        this._isMoving = true;
-      } else {
-        // idle: reset to frame 0 of idle texture
-        if(this._isMoving){
-          this.localPlayer.setTexture('hero_idle').setCrop(0,0,this._FRAME_W,48);
-          this._isMoving = false;
-          this._runFrame = 0;
-          this._runTick  = 0;
-        }
+        this._heroTick++;
+        if(this._heroTick % 4 === 0) this._heroFrame = (this._heroFrame+1) % 8;
+        this.localPlayer.setTexture('hero_f' + this._heroFrame);
+        this._heroMoving = true;
+      } else if(this._heroMoving) {
+        this._heroFrame = 0; this._heroTick = 0;
+        this.localPlayer.setTexture('hero_f0');
+        this._heroMoving = false;
       }
 
       // Flip sprite based on horizontal direction
