@@ -569,6 +569,82 @@ body {
 
 /* ═══════════════════════════ GAME CONTAINER ═══════════════════════════ */
 #game-container { position: fixed; inset: 0; }
+
+/* ═══════════════════ TOUCH CONTROLS ═══════════════════ */
+#touch-controls {
+  display: none;
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 100;
+}
+/* Show only on touch devices */
+@media (pointer: coarse) {
+  #touch-controls { display: block; }
+}
+
+/* Joystick zone — bottom-left */
+#joystick-zone {
+  position: absolute;
+  left: 24px;
+  bottom: 24px;
+  width: 140px;
+  height: 140px;
+  pointer-events: all;
+}
+#joystick-base {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.10);
+  border: 2px solid rgba(255,255,255,0.25);
+  backdrop-filter: blur(2px);
+}
+#joystick-thumb {
+  position: absolute;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 35%, rgba(255,255,255,0.7), rgba(180,200,255,0.4));
+  border: 2px solid rgba(255,255,255,0.5);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  transition: none;
+  pointer-events: none;
+}
+
+/* Action buttons — bottom-right */
+#action-buttons {
+  position: absolute;
+  right: 28px;
+  bottom: 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  align-items: center;
+  pointer-events: all;
+}
+.touch-btn {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  border: 2px solid rgba(255,255,255,0.3);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  transition: transform 0.08s, opacity 0.08s;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.4);
+}
+.touch-btn:active { transform: scale(0.88); opacity: 0.75; }
+#btn-map {
+  background: rgba(30,40,80,0.7);
+}
 </style>
 </head>
 <body>
@@ -645,6 +721,17 @@ body {
 
 <!-- ══════════ GAME CANVAS ══════════ -->
 <div id="game-container"></div>
+
+<!-- ══════════ TOUCH CONTROLS ══════════ -->
+<div id="touch-controls">
+  <div id="joystick-zone">
+    <div id="joystick-base"></div>
+    <div id="joystick-thumb"></div>
+  </div>
+  <div id="action-buttons">
+    <button class="touch-btn" id="btn-map">🗺</button>
+  </div>
+</div>
 
 <!-- ══════════ BATTLE UI ══════════ -->
 <div id="battle-overlay">
@@ -942,6 +1029,88 @@ function clientWallCheck(px, py) {
 // ═══════════════════════════════════════════
 //  PHASER INIT
 // ═══════════════════════════════════════════
+// ══════════ TOUCH / VIRTUAL JOYSTICK ══════════
+const touchInput = { vx: 0, vy: 0 };
+(function setupTouchControls() {
+  const zone  = document.getElementById('joystick-zone');
+  const thumb = document.getElementById('joystick-thumb');
+  if (!zone) return;
+
+  const BASE_R = 70;   // joystick zone radius
+  const DEAD   = 8;    // dead zone px
+  let activeTouchId = null;
+  let originX = 0, originY = 0;
+
+  function onStart(e) {
+    e.preventDefault();
+    const t = e.changedTouches[0];
+    activeTouchId = t.identifier;
+    const rect = zone.getBoundingClientRect();
+    originX = rect.left + rect.width  / 2;
+    originY = rect.top  + rect.height / 2;
+    onMove(e);
+  }
+
+  function onMove(e) {
+    e.preventDefault();
+    if (activeTouchId === null) return;
+    let touch = null;
+    for (const t of e.changedTouches) {
+      if (t.identifier === activeTouchId) { touch = t; break; }
+    }
+    if (!touch) return;
+
+    let dx = touch.clientX - originX;
+    let dy = touch.clientY - originY;
+    const dist = Math.hypot(dx, dy);
+
+    // clamp thumb inside base
+    const clampR = BASE_R - 28;
+    if (dist > clampR) { dx = dx/dist*clampR; dy = dy/dist*clampR; }
+
+    // move thumb visually
+    thumb.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
+
+    // compute normalised input (-1..1)
+    if (dist < DEAD) {
+      touchInput.vx = 0; touchInput.vy = 0;
+    } else {
+      const norm = Math.min(dist, clampR) / clampR;
+      touchInput.vx = (dx / (Math.abs(dx)||1)) * norm * (Math.abs(dx)/dist);
+      touchInput.vy = (dy / (Math.abs(dy)||1)) * norm * (Math.abs(dy)/dist);
+      // proper normalised vector
+      touchInput.vx = dx / clampR;
+      touchInput.vy = dy / clampR;
+    }
+  }
+
+  function onEnd(e) {
+    for (const t of e.changedTouches) {
+      if (t.identifier === activeTouchId) {
+        activeTouchId = null;
+        touchInput.vx = 0; touchInput.vy = 0;
+        thumb.style.transform = 'translate(-50%, -50%)';
+        break;
+      }
+    }
+  }
+
+  zone.addEventListener('touchstart',  onStart, { passive: false });
+  zone.addEventListener('touchmove',   onMove,  { passive: false });
+  zone.addEventListener('touchend',    onEnd,   { passive: false });
+  zone.addEventListener('touchcancel', onEnd,   { passive: false });
+
+  // Map toggle button
+  const btnMap = document.getElementById('btn-map');
+  if (btnMap) {
+    btnMap.addEventListener('touchstart', e => {
+      e.preventDefault();
+      const mm = document.getElementById('minimap-canvas');
+      if (mm) mm.style.display = mm.style.display === 'none' ? '' : 'none';
+    }, { passive: false });
+  }
+})();
+
 function initPhaserGame() {
   buildHpDisplay();
 
@@ -1424,13 +1593,33 @@ function initPhaserGame() {
     _move() {
       const k = this.keys, sp = CFG.SPEED;
       let vx=0, vy=0;
+      // ── Keyboard ──
       if(k.A.isDown||k.LEFT.isDown)  vx-=1;
       if(k.D.isDown||k.RIGHT.isDown) vx+=1;
       if(k.W.isDown||k.UP.isDown)    vy-=1;
       if(k.S.isDown||k.DOWN.isDown)  vy+=1;
-      if(vx&&vy){ vx*=0.7071; vy*=0.7071; }
+      // ── Touch joystick (takes over if no keyboard) ──
+      if(vx===0 && vy===0 && typeof touchInput !== 'undefined') {
+        vx = touchInput.vx || 0;
+        vy = touchInput.vy || 0;
+      }
+      // Normalise diagonal
+      const len = Math.hypot(vx, vy);
+      if(len > 1) { vx /= len; vy /= len; }
       this.localPlayer.setVelocity(vx*sp, vy*sp);
       return [vx,vy];
+    }
+
+    _attackNearest() {
+      // Trigger battle with nearest visible player (touch attack button)
+      if (!state.isAlive || state.isLocked) return;
+      let nearest = null, nearestD = Infinity;
+      state.remotePlayers.forEach((rp, id) => {
+        if (!rp.isAlive) return;
+        const d = Math.hypot(rp.sprite.x - this.localPlayer.x, rp.sprite.y - this.localPlayer.y);
+        if (d < CFG.COLLISION_D * 2.5 && d < nearestD) { nearestD = d; nearest = id; }
+      });
+      if (nearest) socket.emit('player:attack', { targetId: nearest });
     }
 
     _highlightNear() {
