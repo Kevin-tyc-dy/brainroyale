@@ -1240,39 +1240,28 @@ function initPhaserGame() {
         }
         const rp = state.remotePlayers.get(p.id);
 
-        // detect movement for animation
+        // animation frame
         const moved = Math.hypot(p.x-rp.prevX, p.y-rp.prevY) > 2;
         if(moved && rp.isAlive){
           rp.runTick++;
-          if(rp.runTick % 3 === 0){
-            rp.runFrame = (rp.runFrame+1) % 8;
-          }
-          const fx = rp.runFrame * 48;
-          rp.sprite.setCrop(fx,0,48,48);
-          rp.sprite.setX(p.x); // will be set below
-          // flip based on direction
+          if(rp.runTick % 3 === 0) rp.runFrame = (rp.runFrame+1) % 8;
+          if(rp.isAlive) rp.sprite.setTexture('enemy_f'+rp.runFrame);
           rp.sprite.setFlipX(p.x < rp.prevX);
         } else if(rp.isAlive) {
-          rp.sprite.setCrop(0,0,48,48); // idle pose frame 0
+          rp.sprite.setTexture('enemy_f0');
         }
         rp.prevX = p.x; rp.prevY = p.y;
 
-        this.tweens.killTweensOf(rp.sprite);
-        this.tweens.add({
-          targets: rp.sprite, x: p.x, y: p.y,
-          duration: CFG.SYNC_MS * 1.3, ease: 'Linear',
-        });
-        rp.nameText.setPosition(p.x, p.y-36);
-        if(rp.shadow) rp.shadow.setPosition(p.x, p.y+22);
+        // 記住目標位置，由 update() 每幀 lerp，避免 nameText/shadow 跳動
+        rp.targetX = p.x;
+        rp.targetY = p.y;
         rp.hp = p.hp; rp.isAlive = p.isAlive;
 
-        // alive / ghost
+        // alive / ghost texture
         if(!p.isAlive){
-          rp.sprite.setTexture('pghost').setCrop(0,0,48,48);
-          rp.sprite.setAlpha(0.4).setDepth(7).setFlipX(false);
+          rp.sprite.setTexture('pghost').setAlpha(0.4).setDepth(7).setFlipX(false);
           if(rp.shadow) rp.shadow.setAlpha(0);
         } else {
-          rp.sprite.setTexture('enemy_sheet');
           rp.sprite.setAlpha(1).setDepth(9);
           if(rp.shadow) rp.shadow.setAlpha(0.55);
         }
@@ -1290,12 +1279,9 @@ function initPhaserGame() {
     }
 
     _spawnRemote(p) {
-      // shadow
-      const shadow = this.add.image(p.x, p.y+22, 'shadow').setDepth(8).setAlpha(0.55);
-      const sprite = this.add.sprite(p.x, p.y, 'enemy_sheet')
-        .setDepth(9).setOrigin(0.5,0.75)
-        .setCrop(0,0,48,48); // show first frame
-      const nameText = this.add.text(p.x, p.y-32, p.name||'?', {
+      const shadow   = this.add.image(p.x, p.y+22, 'shadow').setDepth(8).setAlpha(0.55);
+      const sprite   = this.add.image(p.x, p.y, 'enemy_f0').setDepth(9).setOrigin(0.5,0.75);
+      const nameText = this.add.text(p.x, p.y-36, p.name||'?', {
         fontFamily:'Rajdhani', fontSize:'13px',
         color:'#ffaaaa', stroke:'#4a0000', strokeThickness:4,
       }).setOrigin(0.5,1).setDepth(10);
@@ -1304,6 +1290,7 @@ function initPhaserGame() {
         sprite, nameText, shadow,
         hp:p.hp, isAlive:p.isAlive,
         runFrame:0, runTick:0, prevX:p.x, prevY:p.y,
+        targetX:p.x, targetY:p.y,
       });
     }
 
@@ -1513,7 +1500,15 @@ function initPhaserGame() {
 
     _highlightNear() {
       const mx=this.localPlayer.x, my=this.localPlayer.y;
+      // ── Lerp remote players every frame (no jump) ──
       state.remotePlayers.forEach(rp=>{
+        if(rp.targetX !== undefined) {
+          const LERP = 0.18;
+          rp.sprite.x   += (rp.targetX - rp.sprite.x)   * LERP;
+          rp.sprite.y   += (rp.targetY - rp.sprite.y)   * LERP;
+          rp.nameText.setPosition(rp.sprite.x, rp.sprite.y - 36);
+          if(rp.shadow) rp.shadow.setPosition(rp.sprite.x, rp.sprite.y + 22);
+        }
         if(!rp.isAlive) return;
         const d=Math.hypot(rp.sprite.x-mx, rp.sprite.y-my);
         if(d < CFG.COLLISION_D*2.2) rp.sprite.setTint(0xffff44);
@@ -1526,17 +1521,23 @@ function initPhaserGame() {
       if(state.isSpectating) return;
       const W=this.cameras.main.width, H=this.cameras.main.height;
       const cx=W/2, cy=H/2, R=CFG.FOG_R;
-      // Lighter fog — max alpha 0.42 instead of 0.75
-      this.fog.fillStyle(0x000000,0.42);
-      this.fog.fillRect(0,0,W,H);
-      // Gradient fade toward center — softer
-      for(let i=18;i>=0;i--){
-        const t=i/18;
-        this.fog.fillStyle(0x000000, t*0.42);
-        this.fog.fillCircle(cx,cy, R*(1-t*0.82));
-      }
-    }
 
+      // strokeCircle 環帶法：從外到內，alpha 平方漸減，中心接近透明
+      const STEPS = 36;
+      const ringW = (R / STEPS) + 1;
+      for (let i = STEPS; i >= 1; i--) {
+        const t     = i / STEPS;
+        const r     = R * t;
+        const alpha = Math.pow(t, 2) * 0.88;
+        this.fog.lineStyle(ringW, 0x000000, alpha);
+        this.fog.strokeCircle(cx, cy, r);
+      }
+      // 視野外補全黑
+      const cornerR = Math.ceil(Math.hypot(W, H));
+      const gapW    = cornerR - R + 4;
+      this.fog.lineStyle(gapW, 0x000000, 0.9);
+      this.fog.strokeCircle(cx, cy, R + gapW / 2);
+    }
     _drawZone() {
       this.zoneGfx.clear();
       if(!state.zoneData) return;
