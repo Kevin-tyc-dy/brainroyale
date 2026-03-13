@@ -1240,22 +1240,23 @@ function initPhaserGame() {
         }
         const rp = state.remotePlayers.get(p.id);
 
-        // animation frame
-        const moved = Math.hypot(p.x-rp.prevX, p.y-rp.prevY) > 2;
+        // animation: compare new server pos vs last server pos
+        const moved = Math.hypot(p.x - rp.serverX, p.y - rp.serverY) > 2;
         if(moved && rp.isAlive){
           rp.runTick++;
           if(rp.runTick % 3 === 0) rp.runFrame = (rp.runFrame+1) % 8;
-          if(rp.isAlive) rp.sprite.setTexture('enemy_f'+rp.runFrame);
-          rp.sprite.setFlipX(p.x < rp.prevX);
+          rp.sprite.setTexture('enemy_f' + rp.runFrame);
+          rp.flipDir = p.x < rp.serverX;  // store flip, apply in lerp loop
         } else if(rp.isAlive) {
           rp.sprite.setTexture('enemy_f0');
         }
-        rp.prevX = p.x; rp.prevY = p.y;
+        // update server-reported position
+        rp.serverX = p.x; rp.serverY = p.y;
 
-        // 記住目標位置，由 update() 每幀 lerp，避免 nameText/shadow 跳動
+        // 更新 lerp 目標（update() 每幀平滑插值）
         rp.targetX = p.x;
         rp.targetY = p.y;
-        rp.hp = p.hp; rp.isAlive = p.isAlive;
+        rp.hp = p.hp; rp.isAlive = p.isAlive; rp.isBot = !!p.isBot;
 
         // alive / ghost texture
         if(!p.isAlive){
@@ -1280,16 +1281,22 @@ function initPhaserGame() {
 
     _spawnRemote(p) {
       const shadow   = this.add.image(p.x, p.y+22, 'shadow').setDepth(8).setAlpha(0.55);
-      const sprite   = this.add.image(p.x, p.y, 'enemy_f0').setDepth(9).setOrigin(0.5,0.75);
+      const texKey   = p.isBot ? 'enemy_f0' : 'enemy_f0';  // both same, differentiated by tint
+      const sprite   = this.add.image(p.x, p.y, texKey).setDepth(9).setOrigin(0.5,0.75);
+      if (p.isBot) sprite.setTint(0xaaddff);  // bots have light blue tint
+      const nameColor = p.isBot ? '#aaddff' : '#ffaaaa';
       const nameText = this.add.text(p.x, p.y-36, p.name||'?', {
         fontFamily:'Rajdhani', fontSize:'13px',
-        color:'#ffaaaa', stroke:'#4a0000', strokeThickness:4,
+        color: nameColor, stroke:'#0a0c14', strokeThickness:4,
       }).setOrigin(0.5,1).setDepth(10);
 
       state.remotePlayers.set(p.id, {
         sprite, nameText, shadow,
-        hp:p.hp, isAlive:p.isAlive,
-        runFrame:0, runTick:0, prevX:p.x, prevY:p.y,
+        hp:p.hp, isAlive:p.isAlive, isBot:!!p.isBot,
+        runFrame:0, runTick:0,
+        // serverX/Y = last server-reported position (for direction calc)
+        serverX:p.x, serverY:p.y,
+        // targetX/Y = lerp destination
         targetX:p.x, targetY:p.y,
       });
     }
@@ -1500,12 +1507,19 @@ function initPhaserGame() {
 
     _highlightNear() {
       const mx=this.localPlayer.x, my=this.localPlayer.y;
-      // ── Lerp remote players every frame (no jump) ──
+      // ── Lerp remote players every frame ──
+      const LERP = 0.15;
       state.remotePlayers.forEach(rp=>{
         if(rp.targetX !== undefined) {
-          const LERP = 0.18;
-          rp.sprite.x   += (rp.targetX - rp.sprite.x)   * LERP;
-          rp.sprite.y   += (rp.targetY - rp.sprite.y)   * LERP;
+          const dx = rp.targetX - rp.sprite.x;
+          const dy = rp.targetY - rp.sprite.y;
+          // snap when very close to avoid micro-jitter
+          if(Math.abs(dx) < 0.5) { rp.sprite.x = rp.targetX; }
+          else { rp.sprite.x += dx * LERP; }
+          if(Math.abs(dy) < 0.5) { rp.sprite.y = rp.targetY; }
+          else { rp.sprite.y += dy * LERP; }
+          // apply flip direction from server update
+          if(rp.flipDir !== undefined) rp.sprite.setFlipX(rp.flipDir);
           rp.nameText.setPosition(rp.sprite.x, rp.sprite.y - 36);
           if(rp.shadow) rp.shadow.setPosition(rp.sprite.x, rp.sprite.y + 22);
         }
