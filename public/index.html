@@ -1133,77 +1133,12 @@ function initPhaserGame() {
     }
 
     preload() {
-      // ── Helper functions (defined here, accessible in create/update via closure) ──
-      function lighten(hex) {
-        let c = hex.replace('#','');
-        if(c.length===3) c=c.split('').map(x=>x+x).join('');
-        const r=Math.min(255,parseInt(c.slice(0,2),16)+35);
-        const g2=Math.min(255,parseInt(c.slice(2,4),16)+35);
-        const b=Math.min(255,parseInt(c.slice(4,6),16)+35);
-        return `rgb(${r},${g2},${b})`;
-      }
-      window._lighten = lighten; // expose for create()
-
-      function drawCharFrame(ctx, skinColor, shirtColor, pantsColor, legPhase) {
-        const OY = 2; // 2px top padding; shoe bottom (42+2=44) = canvas bottom
-        const p = (x,y,w,h,c,a=1) => {
-          ctx.globalAlpha = a; ctx.fillStyle = c;
-          ctx.fillRect(x, OY+y, w, h); ctx.globalAlpha = 1;
-        };
-        const swing = Math.sin(legPhase * Math.PI * 2 / 8);
-        const lLegY = 28 + Math.round(swing * 4);
-        const rLegY = 28 - Math.round(swing * 4);
-        p(12, lLegY+10, 7, 4, '#1a1a2e');
-        p(12, lLegY,    7, 11, pantsColor);
-        p(29, rLegY+10, 7, 4, '#1a1a2e');
-        p(29, rLegY,    7, 11, pantsColor);
-        p(13, 20, 22, 14, shirtColor);
-        p(15, 20, 18,  3, lighten(shirtColor));
-        p(13, 32, 22,  3, '#5c3a1e');
-        const armSwing = -swing;
-        const lArmY = 22 + Math.round(armSwing * 3);
-        const rArmY = 22 - Math.round(armSwing * 3);
-        p(7,  lArmY,    7, 12, skinColor);
-        p(7,  lArmY+10, 7,  4, lighten(skinColor));
-        p(34, rArmY,    7, 12, skinColor);
-        p(34, rArmY+10, 7,  4, lighten(skinColor));
-        p(14, 4, 20, 18, skinColor);
-        p(14, 4, 20,  6, '#2c1810');
-        p(14, 4,  4, 10, '#2c1810');
-        p(17, 12, 4, 4, '#ffffff'); p(27, 12, 4, 4, '#ffffff');
-        p(18, 13, 2, 2, '#222');    p(28, 13, 2, 2, '#222');
-        p(20, 18, 8, 2, '#c0634a');
-        p(12, 11, 3, 5, skinColor); p(33, 11, 3, 5, skinColor);
-        if (shirtColor === '#3a7bd5') {
-          p(35, 21, 8, 12, '#f0a500'); p(36, 33, 6, 3, '#d4891a');
-        }
-      }
-      window._drawCharFrame = drawCharFrame; // expose for create()
-
-      // ── Generate 8 hero frames (48w × 44h: shoe bottom = canvas bottom) ──
-      for (let i = 0; i < 8; i++) {
-        const cv = document.createElement('canvas');
-        cv.width = 48; cv.height = 44;
-        drawCharFrame(cv.getContext('2d'), '#f4a261','#3a7bd5','#2d3a7c', i);
-        this.textures.addCanvas('hero_f' + i, cv);
-      }
-
-      // ── Generate 8 enemy frames ──
-      for (let i = 0; i < 8; i++) {
-        const cv = document.createElement('canvas');
-        cv.width = 48; cv.height = 44;
-        drawCharFrame(cv.getContext('2d'), '#e8956d','#c0392b','#5d1a1a', i);
-        this.textures.addCanvas('enemy_f' + i, cv);
-      }
-
-      // ── Ghost (eliminated) ──
-      const gc = document.createElement('canvas');
-      gc.width = 48; gc.height = 44;
-      const gctx = gc.getContext('2d');
-      gctx.globalAlpha = 0.35;
-      drawCharFrame(gctx, '#aaaaaa','#888888','#666666', 0);
-      gctx.globalAlpha = 1;
-      this.textures.addCanvas('pghost', gc);
+      // ── Spritesheet: 128×128px, 4 cols × 4 rows, each frame 32×32 ──
+      // Row 0 = walk down, Row 1 = walk left, Row 2 = walk right, Row 3 = walk up
+      // Col 0,1,2,3 = 4 walk frames
+      this.load.spritesheet('character', 'data:image/png;base64,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', {
+        frameWidth: 32, frameHeight: 32
+      });
 
       // ── Ground tile ──
       const gndC = document.createElement('canvas');
@@ -1221,8 +1156,8 @@ function initPhaserGame() {
       // ── Path tile ──
       const pthC = document.createElement('canvas');
       pthC.width = pthC.height = 48;
-      const pth = pthC.getContext('2d');
-      pth.fillStyle = '#a0845c'; pth.fillRect(0,0,48,48);
+      pthC.getContext('2d').fillStyle = '#a0845c';
+      pthC.getContext('2d').fillRect(0,0,48,48);
       this.textures.addCanvas('path', pthC);
 
       // ── Shadow ──
@@ -1234,6 +1169,14 @@ function initPhaserGame() {
       grad.addColorStop(1,'rgba(0,0,0,0)');
       shd.fillStyle = grad; shd.fillRect(0,0,36,12);
       this.textures.addCanvas('shadow', shdC);
+
+      // ── Ghost (eliminated) — tinted grey canvas 32×32 ──
+      const gc = document.createElement('canvas');
+      gc.width = gc.height = 32;
+      const gctx = gc.getContext('2d');
+      gctx.fillStyle = 'rgba(150,150,170,0.35)';
+      gctx.fillRect(0,0,32,32);
+      this.textures.addCanvas('pghost', gc);
     }
 
     create() {
@@ -1291,15 +1234,37 @@ function initPhaserGame() {
       this.playerShadow = this.add.image(cx, cy, 'shadow').setDepth(9).setAlpha(0.7);
 
       // Hero sprite — start with idle texture
-      this.localPlayer = this.physics.add.image(cx, cy, 'hero_f0')
+      this.localPlayer = this.physics.add.sprite(cx, cy, 'character', 1)
         .setCollideWorldBounds(true)
         .setDepth(10)
-        .setOrigin(0.5, 1);   // 腳底錨點，換幀時座標不偏移
-      this._heroFrame  = 0;
-      this._heroTick   = 0;
+        .setOrigin(0.5, 1)   // 腳底錨點
+        .setScale(1.5);      // 32px→48px display
+
+      // ── Register walk animations (row × 4 cols, frameWidth=32) ──
+      // frame index = row*4 + col
+      const dirs = [{key:'walk_down',row:0},{key:'walk_left',row:1},{key:'walk_right',row:2},{key:'walk_up',row:3}];
+      dirs.forEach(({key,row}) => {
+        if (!this.anims.exists(key)) {
+          this.anims.create({
+            key,
+            frames: this.anims.generateFrameNumbers('character', {
+              start: row*4, end: row*4+3
+            }),
+            frameRate: 8,
+            repeat: -1,
+          });
+        }
+      });
+      // idle = single frame per direction (col 1 = neutral stance)
+      [{key:'idle_down',frame:1},{key:'idle_left',frame:5},{key:'idle_right',frame:9},{key:'idle_up',frame:13}].forEach(({key,frame})=>{
+        if (!this.anims.exists(key)) {
+          this.anims.create({ key, frames:[{key:'character',frame}], frameRate:1, repeat:0 });
+        }
+      });
+      this.localPlayer.play('idle_down');
       this._heroMoving = false;
 
-      this._facing = 'right';
+      this._facing = 'down';  // down/left/right/up
 
       // Name label
       this.localLabel = this.add.text(cx, cy-32, state.myName, {
@@ -1348,17 +1313,22 @@ function initPhaserGame() {
         }
         const rp = state.remotePlayers.get(p.id);
 
-        // animation: compare new server pos vs last server pos
-        const moved = Math.hypot(p.x - rp.serverX, p.y - rp.serverY) > 2;
+        // animation: direction from server position delta
+        const dx = p.x - rp.serverX, dy = p.y - rp.serverY;
+        const moved = Math.hypot(dx, dy) > 2;
         if(moved && rp.isAlive){
-          rp.runTick++;
-          if(rp.runTick % 3 === 0) rp.runFrame = (rp.runFrame+1) % 8;
-          rp.sprite.setTexture('enemy_f' + rp.runFrame);
-          rp.flipDir = p.x < rp.serverX;  // store flip, apply in lerp loop
-        } else if(rp.isAlive) {
-          rp.sprite.setTexture('enemy_f0');
+          let dir = rp.facing || 'down';
+          if(Math.abs(dx) >= Math.abs(dy)) dir = dx>0?'right':'left';
+          else dir = dy>0?'down':'up';
+          if(dir !== rp.facing || !rp.wasMoving){
+            rp.sprite.play('walk_'+dir, true);
+            rp.facing = dir;
+          }
+          rp.wasMoving = true;
+        } else if(rp.isAlive && rp.wasMoving) {
+          rp.sprite.play('idle_'+(rp.facing||'down'), true);
+          rp.wasMoving = false;
         }
-        // update server-reported position
         rp.serverX = p.x; rp.serverY = p.y;
 
         // 更新 lerp 目標（update() 每幀平滑插值）
@@ -1368,10 +1338,11 @@ function initPhaserGame() {
 
         // alive / ghost texture
         if(!p.isAlive){
-          rp.sprite.setTexture('pghost').setAlpha(0.4).setDepth(7).setFlipX(false);
+          rp.sprite.setTexture('character').setFrame(1).setAlpha(0.4).setDepth(7).setTint(0x8888aa);
           if(rp.shadow) rp.shadow.setAlpha(0);
         } else {
-          rp.sprite.setAlpha(1).setDepth(9);
+          rp.sprite.setTexture('character').setAlpha(1).setDepth(9).clearTint();
+          if(rp.isBot) rp.sprite.setTint(0xaaddff);
           if(rp.shadow) rp.shadow.setAlpha(0.55);
         }
       });
@@ -1389,22 +1360,21 @@ function initPhaserGame() {
 
     _spawnRemote(p) {
       const shadow   = this.add.image(p.x, p.y, 'shadow').setDepth(8).setAlpha(0.55);
-      const texKey   = p.isBot ? 'enemy_f0' : 'enemy_f0';  // both same, differentiated by tint
-      const sprite   = this.add.image(p.x, p.y, texKey).setDepth(9).setOrigin(0.5, 1);
-      if (p.isBot) sprite.setTint(0xaaddff);  // bots have light blue tint
+      const sprite   = this.add.sprite(p.x, p.y, 'character', 1)
+        .setDepth(9).setOrigin(0.5, 1).setScale(1.5);
+      if (p.isBot) sprite.setTint(0xaaddff);  // bots: light blue tint
       const nameColor = p.isBot ? '#aaddff' : '#ffaaaa';
-      const nameText = this.add.text(p.x, p.y-36, p.name||'?', {
+      const nameText = this.add.text(p.x, p.y-48, p.name||'?', {
         fontFamily:'Rajdhani', fontSize:'13px',
         color: nameColor, stroke:'#0a0c14', strokeThickness:4,
       }).setOrigin(0.5,1).setDepth(10);
+      sprite.play('idle_down');
 
       state.remotePlayers.set(p.id, {
         sprite, nameText, shadow,
         hp:p.hp, isAlive:p.isAlive, isBot:!!p.isBot,
-        runFrame:0, runTick:0,
-        // serverX/Y = last server-reported position (for direction calc)
+        facing:'down', wasMoving:false,
         serverX:p.x, serverY:p.y,
-        // targetX/Y = lerp destination
         targetX:p.x, targetY:p.y,
       });
     }
@@ -1551,21 +1521,23 @@ function initPhaserGame() {
 
       const moving = (vx!==0||vy!==0) && state.isAlive && !state.isLocked;
 
-      // ── Hero animation: independent canvas frames, no setCrop ──
+      // ── Hero animation: Phaser anims by direction ──
       if(moving){
-        this._heroTick++;
-        if(this._heroTick % 4 === 0) this._heroFrame = (this._heroFrame+1) % 8;
-        this.localPlayer.setTexture('hero_f' + this._heroFrame);
+        const animKey = 'walk_' + this._facing;
+        if(!this._heroMoving || this.localPlayer.anims.currentAnim?.key !== animKey){
+          this.localPlayer.play(animKey, true);
+        }
         this._heroMoving = true;
       } else if(this._heroMoving) {
-        this._heroFrame = 0; this._heroTick = 0;
-        this.localPlayer.setTexture('hero_f0');
+        this.localPlayer.play('idle_' + this._facing, true);
         this._heroMoving = false;
       }
 
-      // Flip sprite based on horizontal direction
-      if(vx < 0) { this.localPlayer.setFlipX(true);  this._facing='left'; }
+      // Update facing direction for animation
+      if(vx < 0) { this.localPlayer.setFlipX(false); this._facing='left'; }
       if(vx > 0) { this.localPlayer.setFlipX(false); this._facing='right'; }
+      if(vy < 0 && vx===0) { this.localPlayer.setFlipX(false); this._facing='up'; }
+      if(vy > 0 && vx===0) { this.localPlayer.setFlipX(false); this._facing='down'; }
 
       // Shadow follows player
       if(this.playerShadow){
@@ -1639,8 +1611,7 @@ function initPhaserGame() {
           else { rp.sprite.x += dx * LERP; }
           if(Math.abs(dy) < 0.5) { rp.sprite.y = rp.targetY; }
           else { rp.sprite.y += dy * LERP; }
-          // apply flip direction from server update
-          if(rp.flipDir !== undefined) rp.sprite.setFlipX(rp.flipDir);
+
           rp.nameText.setPosition(rp.sprite.x, rp.sprite.y - 48);
           if(rp.shadow) rp.shadow.setPosition(rp.sprite.x, rp.sprite.y - 2);
         }
