@@ -147,7 +147,7 @@ const CONFIG = {
   MAX_HP:           5,
   COLLISION_DIST:   60,
   KNOCKBACK_DIST:   160,
-  BATTLE_COOLDOWN:  3000,
+  BATTLE_COOLDOWN:  5000,  // 對戰後 5 秒無敵保護
   BATTLE_TIMEOUT:   15000,
   SYNC_INTERVAL:    100,
   FOG_RADIUS:       600,     // Server-side fog: only broadcast players within this range
@@ -394,6 +394,8 @@ function isBotBlocked(wallSet, tileSize, px, py) {
 
 function tickBots(room) {
   if (!room.gameStarted || room.isPaused) return;
+  // bot 開局等待 5 秒，讓玩家有時間看清楚局面
+  if (!room.startAt || Date.now() - room.startAt < 5000) return;
   const humans = [...room.players.values()].filter(p => p.isAlive && !p.isBot);
   const margin = 80;
   const cl = (v, mn, mx) => Math.max(mn, Math.min(mx, v));
@@ -618,8 +620,15 @@ function randSpawn(room) {
     const pts = getMapSpawnPoints(room.mapObj);
     if (pts.length > 0) return pts[Math.floor(Math.random() * pts.length)];
   }
-  const m = 320;
-  return { x: m + Math.random()*(CONFIG.MAP_W-m*2), y: m + Math.random()*(CONFIG.MAP_H-m*2) };
+  // 開局在安全圈初始半徑（2400px）內隨機 spawn，確保不在圈外
+  const cx = CONFIG.MAP_W / 2, cy = CONFIG.MAP_H / 2;
+  const initR = CONFIG.ZONE_STAGES[0].radius * 0.85; // 85% 安全半徑內
+  const angle = Math.random() * Math.PI * 2;
+  const r     = Math.random() * initR;
+  return {
+    x: Math.round(cx + Math.cos(angle) * r),
+    y: Math.round(cy + Math.sin(angle) * r),
+  };
 }
 
 function pickQ(room) {
@@ -879,10 +888,16 @@ function eliminate(room, pid) {
 // ═══════════════════════════════════════════════
 function checkCollisions(room, mover) {
   if(!mover.isAlive||mover.isLocked||room.isPaused) return;
+  const now = Date.now();
+  // 開局保護：遊戲開始後 5 秒內不觸發對戰
+  if(room.startAt && now - room.startAt < 5000) return;
+  // 玩家無敵期間不觸發對戰
+  if(mover.invincibleUntil && now < mover.invincibleUntil) return;
   room.players.forEach(other=>{
     if(other.id===mover.id||!other.isAlive||other.isLocked) return;
+    if(other.invincibleUntil && now < other.invincibleUntil) return;
     const cd = mover.cooldowns.get(other.id)||0;
-    if(Date.now()-cd < CONFIG.BATTLE_COOLDOWN) return;
+    if(now - cd < CONFIG.BATTLE_COOLDOWN) return;
     if(dist(mover,other) <= CONFIG.COLLISION_DIST) triggerBattle(room,mover,other).catch(e=>console.error('[Battle] triggerBattle error:',e.message));
   });
 }
@@ -983,27 +998,26 @@ function resolveBattle(room, battle, isTimeout) {
     const aAnswered = battle.answers.has(pA.id);
     const bAnswered = battle.answers.has(pB.id);
 
-    if (isTimeout) {
-      // 超時規則：有答對的贏沒答的；兩個都沒答/都答錯→平局；都答對比時間
-      if (aC && !bAnswered)      { winnerId=pA.id; loserId=pB.id; }
-      else if (bC && !aAnswered) { winnerId=pB.id; loserId=pA.id; }
-      else if (aC && !bC)        { winnerId=pA.id; loserId=pB.id; }
-      else if (!aC && bC)        { winnerId=pB.id; loserId=pA.id; }
-      else if (aC && bC) {
-        if((ansA.serverTime||Infinity)<=(ansB.serverTime||Infinity)){ winnerId=pA.id; loserId=pB.id; }
+    // 判勝負：bot 對戰時，玩家答對即贏（不與 bot 比速度，因 bot 有人工 delay）
+    const aIsBot = pA.isBot || false;
+    const bIsBot = pB.isBot || false;
+    const humanVsBot = (aIsBot !== bIsBot); // 一人一 bot
+
+    if (aC && !bC)  { winnerId=pA.id; loserId=pB.id; }
+    else if (!aC && bC) { winnerId=pB.id; loserId=pA.id; }
+    else if (aC && bC) {
+      if (humanVsBot) {
+        // 玩家 vs bot：答對的人類直接贏，不比速度
+        winnerId = aIsBot ? pB.id : pA.id;
+        loserId  = aIsBot ? pA.id : pB.id;
+      } else {
+        // 人類 vs 人類：比速度
+        if((ansA?.serverTime||Infinity) <= (ansB?.serverTime||Infinity)){ winnerId=pA.id; loserId=pB.id; }
         else { winnerId=pB.id; loserId=pA.id; }
       }
-      // 兩者都沒答或都答錯 → 平局，但各扣一滴血
-      if (!winnerId) { loserId = null; } // draw, handle below
-    } else {
-      if(aC&&!bC)       { winnerId=pA.id; loserId=pB.id; }
-      else if(!aC&&bC)  { winnerId=pB.id; loserId=pA.id; }
-      else if(aC&&bC)   {
-        if((ansA.serverTime||Infinity)<=(ansB.serverTime||Infinity)){ winnerId=pA.id; loserId=pB.id; }
-        else { winnerId=pB.id; loserId=pA.id; }
-      }
-      // both wrong → draw
-    }
+    } else if (!aAnswered && bC) { winnerId=pB.id; loserId=pA.id; }
+    else if (!bAnswered && aC)   { winnerId=pA.id; loserId=pB.id; }
+    // 兩者都沒答或都答錯 → 平局
   }
 
   // Stats
@@ -1079,8 +1093,8 @@ function resolveBattle(room, battle, isTimeout) {
     pA.x=newA.x; pA.y=newA.y;
     pB.x=newB.x; pB.y=newB.y;
     // 無論勝負，只要玩家還活著就解鎖
-    if(pA.isAlive) pA.isLocked=false;
-    if(pB.isAlive) pB.isLocked=false;
+    if(pA.isAlive) { pA.isLocked=false; pA.invincibleUntil = Date.now() + 5000; }
+    if(pB.isAlive) { pB.isLocked=false; pB.invincibleUntil = Date.now() + 5000; }
     io.to(pA.id).emit('player:knockback',{ myNewPos:newA });
     io.to(pB.id).emit('player:knockback',{ myNewPos:newB });
     room.battles.delete(battle.id);
