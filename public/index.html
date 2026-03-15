@@ -1133,10 +1133,13 @@ function initPhaserGame() {
     }
 
     preload() {
-      // ── Spritesheet: 實體檔案路徑，Phaser load 系統正確等待 ──
-      this.load.spritesheet('character', 'assets/character.png', {
-        frameWidth: 32, frameHeight: 32
-      });
+      // ── Spritesheet: 實體檔案路徑 ──
+      // 玩家角色
+      this.load.spritesheet('character', 'assets/character.png', { frameWidth: 32, frameHeight: 32 });
+      // Bot 角色 (替換圖片時放入 public/assets/ 並用相同格式：4列×4欄，每格32×32)
+      this.load.spritesheet('bot1', 'assets/bot1.png', { frameWidth: 32, frameHeight: 32 });
+      this.load.spritesheet('bot2', 'assets/bot2.png', { frameWidth: 32, frameHeight: 32 });
+      this.load.spritesheet('bot3', 'assets/bot3.png', { frameWidth: 32, frameHeight: 32 });
 
       // ── Ground tile ──
       const gndC = document.createElement('canvas');
@@ -1230,24 +1233,26 @@ function initPhaserGame() {
 
       // ── Register walk animations (row × 4 cols, frameWidth=32) ──
       // frame index = row*4 + col
-      const dirs = [{key:'walk_down',row:0},{key:'walk_left',row:1},{key:'walk_right',row:2},{key:'walk_up',row:3}];
-      dirs.forEach(({key,row}) => {
-        if (!this.anims.exists(key)) {
-          this.anims.create({
-            key,
-            frames: this.anims.generateFrameNumbers('character', {
-              start: row*4, end: row*4+3
-            }),
-            frameRate: 8,
-            repeat: -1,
-          });
-        }
-      });
-      // idle = single frame per direction (col 1 = neutral stance)
-      [{key:'idle_down',frame:1},{key:'idle_left',frame:5},{key:'idle_right',frame:9},{key:'idle_up',frame:13}].forEach(({key,frame})=>{
-        if (!this.anims.exists(key)) {
-          this.anims.create({ key, frames:[{key:'character',frame}], frameRate:1, repeat:0 });
-        }
+      // 為每個 spritesheet 註冊 walk/idle 動畫
+      ['character','bot1','bot2','bot3'].forEach(texKey => {
+        const prefix = texKey === 'character' ? '' : texKey + '_';
+        const dirs = [{key:'walk_down',row:0},{key:'walk_left',row:1},{key:'walk_right',row:2},{key:'walk_up',row:3}];
+        dirs.forEach(({key,row}) => {
+          const animKey = prefix + key;
+          if (!this.anims.exists(animKey)) {
+            this.anims.create({
+              key: animKey,
+              frames: this.anims.generateFrameNumbers(texKey, { start: row*4, end: row*4+3 }),
+              frameRate: 8, repeat: -1,
+            });
+          }
+        });
+        [{key:'idle_down',frame:1},{key:'idle_left',frame:5},{key:'idle_right',frame:9},{key:'idle_up',frame:13}].forEach(({key,frame})=>{
+          const animKey = prefix + key;
+          if (!this.anims.exists(animKey)) {
+            this.anims.create({ key: animKey, frames:[{key:texKey,frame}], frameRate:1, repeat:0 });
+          }
+        });
       });
       this.localPlayer.play('idle_down');
       this._heroMoving = false;
@@ -1308,13 +1313,15 @@ function initPhaserGame() {
           let dir = rp.facing || 'down';
           if(Math.abs(dx) >= Math.abs(dy)) dir = dx>0?'right':'left';
           else dir = dy>0?'down':'up';
+          const ap = rp.animPrefix || '';
           if(dir !== rp.facing || !rp.wasMoving){
-            rp.sprite.play('walk_'+dir, true);
+            rp.sprite.play(ap + 'walk_'+dir, true);
             rp.facing = dir;
           }
           rp.wasMoving = true;
         } else if(rp.isAlive && rp.wasMoving) {
-          rp.sprite.play('idle_'+(rp.facing||'down'), true);
+          const ap = rp.animPrefix || '';
+          rp.sprite.play(ap + 'idle_'+(rp.facing||'down'), true);
           rp.wasMoving = false;
         }
         rp.serverX = p.x; rp.serverY = p.y;
@@ -1324,14 +1331,26 @@ function initPhaserGame() {
         rp.targetY = p.y;
         rp.hp = p.hp; rp.isAlive = p.isAlive; rp.isBot = !!p.isBot;
 
-        // alive / ghost texture
+        // alive / ghost — 只在狀態改變時才切換，不打斷動畫
+        const wasAlive = rp._wasAlive !== false;
         if(!p.isAlive){
-          rp.sprite.setTexture('character').setFrame(1).setAlpha(0.4).setDepth(7).setTint(0x8888aa);
-          if(rp.shadow) rp.shadow.setAlpha(0);
+          if(wasAlive) {
+            // 剛被淘汰：停止動畫，顯示靜止幀
+            rp.sprite.stop();
+            rp.sprite.setFrame(1).setAlpha(0.4).setDepth(7).setTint(0x8888aa);
+            if(rp.shadow) rp.shadow.setAlpha(0);
+            rp._wasAlive = false;
+          }
         } else {
-          rp.sprite.setTexture('character').setAlpha(1).setDepth(9).clearTint();
-          if(rp.isBot) rp.sprite.setTint(0xaaddff);
-          if(rp.shadow) rp.shadow.setAlpha(0.55);
+          if(!wasAlive) {
+            // 復活（理論上不會，但防禦性處理）
+            rp.sprite.setAlpha(1).setDepth(9).clearTint();
+            if(rp.isBot && rp.botTint) rp.sprite.setTint(rp.botTint);
+            if(rp.shadow) rp.shadow.setAlpha(0.55);
+            rp._wasAlive = true;
+          }
+          // tint 只在 bot 狀態改變時設定
+          if(rp.isBot && rp.botTint) rp.sprite.setTint(rp.botTint);
         }
       });
 
@@ -1347,20 +1366,24 @@ function initPhaserGame() {
     }
 
     _spawnRemote(p) {
-      const shadow   = this.add.image(p.x, p.y, 'shadow').setDepth(8).setAlpha(0.55);
-      const sprite   = this.add.sprite(p.x, p.y, 'character', 1)
+      const shadow    = this.add.image(p.x, p.y, 'shadow').setDepth(8).setAlpha(0.55);
+      const texKey    = p.isBot ? ('bot' + (p.botSheet||1)) : 'character';
+      const animPrefix = p.isBot ? (texKey + '_') : '';
+      const sprite    = this.add.sprite(p.x, p.y, texKey, 1)
         .setDepth(9).setOrigin(0.5, 1).setScale(1.5);
-      if (p.isBot) sprite.setTint(0xaaddff);  // bots: light blue tint
+      if (p.isBot && p.botTint) sprite.setTint(p.botTint);
       const nameColor = p.isBot ? '#aaddff' : '#ffaaaa';
-      const nameText = this.add.text(p.x, p.y-48, p.name||'?', {
+      const nameText  = this.add.text(p.x, p.y-48, p.name||'?', {
         fontFamily:'Rajdhani', fontSize:'13px',
         color: nameColor, stroke:'#0a0c14', strokeThickness:4,
       }).setOrigin(0.5,1).setDepth(10);
-      sprite.play('idle_down');
+      sprite.play(animPrefix + 'idle_down');
 
       state.remotePlayers.set(p.id, {
         sprite, nameText, shadow,
         hp:p.hp, isAlive:p.isAlive, isBot:!!p.isBot,
+        botSheet:p.botSheet||1, botTint:p.botTint||null,
+        animPrefix,
         facing:'down', wasMoving:false,
         serverX:p.x, serverY:p.y,
         targetX:p.x, targetY:p.y,
