@@ -1313,15 +1313,18 @@ function initPhaserGame() {
           let dir = rp.facing || 'down';
           if(Math.abs(dx) >= Math.abs(dy)) dir = dx>0?'right':'left';
           else dir = dy>0?'down':'up';
-          const ap = rp.animPrefix || '';
-          if(dir !== rp.facing || !rp.wasMoving){
-            rp.sprite.play(ap + 'walk_'+dir, true);
-            rp.facing = dir;
+          const ap  = rp.animPrefix || '';
+          const key = ap + 'walk_' + dir;
+          // 每次都確認動畫在播放（方向變了或動畫停了都重新 play）
+          if(rp.sprite.anims.currentAnim?.key !== key || !rp.sprite.anims.isPlaying){
+            rp.sprite.play(key);
           }
+          rp.facing    = dir;
           rp.wasMoving = true;
         } else if(rp.isAlive && rp.wasMoving) {
-          const ap = rp.animPrefix || '';
-          rp.sprite.play(ap + 'idle_'+(rp.facing||'down'), true);
+          const ap  = rp.animPrefix || '';
+          const key = ap + 'idle_' + (rp.facing||'down');
+          rp.sprite.play(key);
           rp.wasMoving = false;
         }
         rp.serverX = p.x; rp.serverY = p.y;
