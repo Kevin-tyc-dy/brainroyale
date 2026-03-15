@@ -367,6 +367,8 @@ function spawnBots(room, count) {
       isBot: true,
       botTargetId: null,
       botWanderAngle: Math.random() * Math.PI * 2,
+      botSheet: (i % 3) + 1,  // 1=bot1, 2=bot2, 3=bot3 (spritesheet)
+      botTint: [0xff9999, 0x99ccff, 0x99ffaa, 0xffdd88, 0xdd99ff, 0xff99dd][i % 6],
     };
     room.players.set(id, bot);
     toTeachers(room.id, 'teacher:player_joined', {
@@ -756,7 +758,7 @@ function broadcastWorld(room) {
       if(p.id===viewer.id) return;
       // Spectators see all; alive players limited by fog
       if(viewer.isAlive && dist(viewer,p) > CONFIG.FOG_RADIUS) return;
-      list.push({ id:p.id, name:p.name, x:p.x, y:p.y, hp:p.hp, isAlive:p.isAlive, isBot:!!p.isBot });
+      list.push({ id:p.id, name:p.name, x:p.x, y:p.y, hp:p.hp, isAlive:p.isAlive, isBot:!!p.isBot, botSheet:p.botSheet||1, botTint:p.botTint||null });
     });
     io.to(viewer.id).emit('world:update',{ players:list, aliveCount:alive });
   });
