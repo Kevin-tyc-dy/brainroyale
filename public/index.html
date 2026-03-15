@@ -957,6 +957,7 @@ function setupSocketEvents() {
   });
 
   socket.on('battle:start', data => {
+    SFX.battleStart();
     if (gameScene) gameScene.onBattleStart(data);
   });
 
@@ -970,6 +971,7 @@ function setupSocketEvents() {
 
   socket.on('player:hp_update', ({ playerId, newHp, source }) => {
     if (playerId !== state.myId) return;
+    SFX.hitDamage();
     state.myHp = newHp;
     if (gameScene) gameScene.updateHpDisplay(newHp);
     if (source === 'zone') triggerZoneWarning();
@@ -1113,6 +1115,88 @@ const touchInput = { vx: 0, vy: 0 };
       if (mm) mm.style.display = mm.style.display === 'none' ? '' : 'none';
     }, { passive: false });
   }
+})();
+
+// ══════════════════════════════════════════
+//  SFX ENGINE (Web Audio API — 無需外部檔案)
+// ══════════════════════════════════════════
+const SFX = (() => {
+  let ctx = null;
+  function getCtx() {
+    if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)();
+    if (ctx.state === 'suspended') ctx.resume();
+    return ctx;
+  }
+
+  // 基本音效建構函式
+  function tone({ freq=440, type='sine', gain=0.4, duration=0.15, attack=0.01, decay=0.05, freqEnd=null }) {
+    const c = getCtx();
+    const osc = c.createOscillator();
+    const env = c.createGain();
+    osc.connect(env); env.connect(c.destination);
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, c.currentTime);
+    if (freqEnd) osc.frequency.exponentialRampToValueAtTime(freqEnd, c.currentTime + duration);
+    env.gain.setValueAtTime(0, c.currentTime);
+    env.gain.linearRampToValueAtTime(gain, c.currentTime + attack);
+    env.gain.exponentialRampToValueAtTime(0.001, c.currentTime + attack + decay);
+    osc.start(c.currentTime);
+    osc.stop(c.currentTime + duration);
+  }
+
+  function noise({ gain=0.3, duration=0.12, freq=800, q=1 }) {
+    const c = getCtx();
+    const buf = c.createBuffer(1, c.sampleRate * duration, c.sampleRate);
+    const data = buf.getChannelData(0);
+    for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
+    const src = c.createBufferSource();
+    src.buffer = buf;
+    const filt = c.createBiquadFilter();
+    filt.type = 'bandpass'; filt.frequency.value = freq; filt.Q.value = q;
+    const env = c.createGain();
+    src.connect(filt); filt.connect(env); env.connect(c.destination);
+    env.gain.setValueAtTime(gain, c.currentTime);
+    env.gain.exponentialRampToValueAtTime(0.001, c.currentTime + duration);
+    src.start(); src.stop(c.currentTime + duration);
+  }
+
+  return {
+    // ⚔ 進入戰鬥：緊張的三連音
+    battleStart() {
+      tone({ freq:220, type:'sawtooth', gain:0.3, duration:0.12, attack:0.005, decay:0.10 });
+      setTimeout(()=> tone({ freq:277, type:'sawtooth', gain:0.3, duration:0.12, attack:0.005, decay:0.10 }), 120);
+      setTimeout(()=> tone({ freq:330, type:'sawtooth', gain:0.4, duration:0.20, attack:0.005, decay:0.18 }), 240);
+    },
+
+    // 🏆 勝利：上升琶音
+    win() {
+      [523, 659, 784, 1047].forEach((f, i) =>
+        setTimeout(()=> tone({ freq:f, type:'triangle', gain:0.35, duration:0.18, attack:0.01, decay:0.15 }), i*100)
+      );
+    },
+
+    // 💔 扣血：低沉衝擊音
+    hitDamage() {
+      tone({ freq:180, type:'sawtooth', gain:0.5, duration:0.25, attack:0.005, decay:0.22, freqEnd:60 });
+      noise({ gain:0.4, duration:0.15, freq:300, q:0.8 });
+    },
+
+    // 🛡 無敵閃爍開始：高頻電子音
+    invincible() {
+      tone({ freq:880, type:'square', gain:0.15, duration:0.08, attack:0.005, decay:0.07 });
+      setTimeout(()=> tone({ freq:1100, type:'square', gain:0.12, duration:0.08, attack:0.005, decay:0.07 }), 100);
+    },
+
+    // ❌ 答題錯誤/超時：下降buzzer
+    wrong() {
+      tone({ freq:300, type:'sawtooth', gain:0.4, duration:0.3, attack:0.01, decay:0.28, freqEnd:100 });
+    },
+
+    // 🔔 選項點擊：輕點擊聲
+    select() {
+      tone({ freq:660, type:'sine', gain:0.2, duration:0.08, attack:0.005, decay:0.07 });
+    },
+  };
 })();
 
 function initPhaserGame() {
@@ -1513,6 +1597,7 @@ function initPhaserGame() {
       this.time.delayedCall(350,()=>{ if(sp.active){sp.setVelocity(0,0);} state.isLocked=false; });
 
       // ── 無敵閃爍：5秒內每 200ms 切換透明度，提示玩家目前無敵 ──
+      SFX.invincible();
       this._invincFlash = 0;
       if(this._invincTimer) this._invincTimer.remove();
       this._invincTimer = this.time.addEvent({
@@ -1773,6 +1858,7 @@ function showBattleUI(battleId, opponentName, question) {
 
 function submitAnswer(battleId, answerId, clickedBtn, grid) {
   if(!state.inBattle) return;
+  SFX.select();
   clearTimeout(state.battleTimerRef);
   if(clickedBtn) clickedBtn.classList.add('selected');
   grid.querySelectorAll('.option-btn').forEach(b => b.disabled = true);
@@ -1802,10 +1888,12 @@ function hideBattleUI({ winnerId, loserId, correctAnswer, loserNewHp, loserElimi
     main.className   = 'result-main draw';
     main.textContent = 'DRAW';
     sub.textContent  = '雙方均未答對，平局';
+    SFX.wrong();
   } else if (iWin) {
     main.className   = 'result-main win';
     main.textContent = 'WIN';
     sub.textContent  = '答題正確！對手失去一滴血 ❤';
+    SFX.win();
   } else if (iLose) {
     main.className   = 'result-main lose';
     main.textContent = 'LOSE';
@@ -1822,6 +1910,7 @@ function hideBattleUI({ winnerId, loserId, correctAnswer, loserNewHp, loserElimi
     }
     if (loserNewHp !== null) reason += `　剩餘 ${loserNewHp} 滴`;
     sub.textContent = reason;
+    SFX.hitDamage();
   } else {
     // 觀戰者或其他情況
     main.className   = 'result-main';
