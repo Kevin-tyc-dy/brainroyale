@@ -932,28 +932,23 @@ function joinGame() {
   state.myName = name;
   document.getElementById('join-btn').disabled = true;
 
-  // Connect socket
-  socket = io(CFG.SERVER, { query: { role: 'player' } });
-
-  socket.on('connect', () => {
-    BGM.play('lobby');
-    showCharSelect();   // 先選角，確認後才 join + showWaiting
-    document.getElementById('char-confirm-btn').onclick = () => {
-      document.getElementById('char-select-screen').classList.remove('active');
-      SFX.select();
+  // 先顯示選角畫面，確認後再連線
+  showCharSelect(function onConfirm() {
+    socket = io(CFG.SERVER, { query: { role: 'player' } });
+    socket.on('connect', () => {
+      BGM.play('lobby');
       socket.emit('player:join', { name, roomId });
       socket.emit('player:char', { charKey: selectedCharKey });
       showWaiting();
-    };
+    });
+    socket.on('connect_error', () => {
+      document.getElementById('join-btn').disabled = false;
+      alert('無法連線至伺服器，請確認伺服器已啟動。');
+    });
+    setupSocketEvents();
   });
-
-  socket.on('connect_error', () => {
-    document.getElementById('join-btn').disabled = false;
-    alert('無法連線至伺服器，請確認伺服器已啟動。');
-  });
-
-  setupSocketEvents();
 }
+
 
 function showWaiting() {
   document.getElementById('lobby-screen').style.display = 'none';
@@ -1318,7 +1313,7 @@ const CHARS = [
 
 let selectedCharKey = 'char1';
 
-function showCharSelect() {
+function showCharSelect(onConfirm) {
   const screen = document.getElementById('char-select-screen');
   const grid   = document.getElementById('char-grid');
   screen.classList.add('active');
@@ -1359,8 +1354,7 @@ function showCharSelect() {
   document.getElementById('char-confirm-btn').onclick = () => {
     screen.classList.remove('active');
     SFX.select();
-    // 通知 server 玩家選擇的角色
-    socket.emit('player:char', { charKey: selectedCharKey });
+    if (typeof onConfirm === 'function') onConfirm();
   };
 }
 
