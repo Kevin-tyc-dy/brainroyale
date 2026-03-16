@@ -767,7 +767,7 @@ function broadcastWorld(room) {
       if(p.id===viewer.id) return;
       // Spectators see all; alive players limited by fog
       if(viewer.isAlive && dist(viewer,p) > CONFIG.FOG_RADIUS) return;
-      list.push({ id:p.id, name:p.name, x:p.x, y:p.y, hp:p.hp, isAlive:p.isAlive, isBot:!!p.isBot, botSheet:p.botSheet||1, botTint:p.botTint||null });
+      list.push({ id:p.id, name:p.name, x:p.x, y:p.y, hp:p.hp, isAlive:p.isAlive, isBot:!!p.isBot, botSheet:p.botSheet||1, botTint:p.botTint||null, charKey:p.charKey||'char1' });
     });
     io.to(viewer.id).emit('world:update',{ players:list, aliveCount:alive });
   });
@@ -1537,6 +1537,17 @@ io.on('connection', socket => {
 
     // Broadcast world immediately for waiting room count
     broadcastWorld(room);
+  });
+
+  socket.on('player:char', ({ charKey }) => {
+    const room = findRoomBySocket(socket.id);
+    if (!room) return;
+    const p = room.players.get(socket.id);
+    if (!p) return;
+    // 只接受 char1~char10
+    if (/^char([1-9]|10)$/.test(charKey)) {
+      p.charKey = charKey;
+    }
   });
 
   socket.on('player:move', ({ x, y, timestamp }) => {
