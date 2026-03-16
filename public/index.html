@@ -854,6 +854,7 @@ function joinGame() {
 
   socket.on('connect', () => {
     socket.emit('player:join', { name, roomId });
+    BGM.play('lobby');
     showWaiting();
   });
 
@@ -939,7 +940,10 @@ function setupSocketEvents() {
   socket.on('game:countdown', () => {
     if (!state.gameStarted) {
       state.gameStarted = true;
-      startCountdown(() => initPhaserGame());
+      startCountdown(() => {
+        BGM.play('explore');
+        initPhaserGame();
+      });
     }
   });
 
@@ -958,6 +962,7 @@ function setupSocketEvents() {
 
   socket.on('battle:start', data => {
     SFX.battleStart();
+    BGM.play('battle', { loop:true, volume:0.5, fadeIn:0.3 });
     if (gameScene) gameScene.onBattleStart(data);
   });
 
@@ -980,6 +985,7 @@ function setupSocketEvents() {
   socket.on('player:eliminated', ({ spectateTargets }) => {
     state.isAlive      = false;
     state.isSpectating = true;
+    BGM.play('gameover', { loop:false, volume:0.5, fadeIn:0.3 });
     showEliminatedUI(spectateTargets);
     addKillFeed('你被淘汰了', true);
   });
@@ -999,6 +1005,12 @@ function setupSocketEvents() {
   });
 
   socket.on('zone:update', zoneData => {
+    // 當安全圈開始縮小（不是初始半徑）時切換警告音樂
+    const initR = 2400;
+    if (zoneData.currentRadius < initR * 0.95 && !state.zoneWarned) {
+      state.zoneWarned = true;
+      BGM.play('zone', { loop:true, volume:0.5, fadeIn:2.0 });
+    }
     state.zoneData = zoneData;
     updateZoneTimer(zoneData.shrinkAt);
   });
@@ -1197,6 +1209,54 @@ const SFX = (() => {
       tone({ freq:660, type:'sine', gain:0.2, duration:0.08, attack:0.005, decay:0.07 });
     },
   };
+})();
+
+// ══════════════════════════════════════════
+//  BGM 管理器
+// ══════════════════════════════════════════
+const BGM = (() => {
+  const tracks = {
+    lobby:    'assets/bgm_lobby.mp3',
+    explore:  'assets/bgm_explore.mp3',
+    battle:   'assets/bgm_battle.mp3',
+    zone:     'assets/bgm_zone.mp3',
+    victory:  'assets/bgm_victory.mp3',
+    gameover: 'assets/bgm_gameover.mp3',
+  };
+  let current = null;
+  let currentKey = null;
+
+  function play(key, { loop=true, volume=0.45, fadeIn=1.0 } = {}) {
+    if (currentKey === key) return;
+    stop(0.5);
+    if (!tracks[key]) return;
+    const audio = new Audio(tracks[key]);
+    audio.loop   = loop;
+    audio.volume = 0;
+    audio.play().catch(()=>{});
+    const step = volume / (fadeIn * 20);
+    const iv = setInterval(() => {
+      audio.volume = Math.min(volume, audio.volume + step);
+      if (audio.volume >= volume) clearInterval(iv);
+    }, 50);
+    current    = audio;
+    currentKey = key;
+  }
+
+  function stop(fadeSec=0.8) {
+    if (!current) return;
+    const audio = current;
+    const startVol = audio.volume;
+    const step = Math.max(startVol / (fadeSec * 20), 0.01);
+    const iv = setInterval(() => {
+      audio.volume = Math.max(0, audio.volume - step);
+      if (audio.volume <= 0) { audio.pause(); clearInterval(iv); }
+    }, 50);
+    current    = null;
+    currentKey = null;
+  }
+
+  return { play, stop };
 })();
 
 function initPhaserGame() {
@@ -1894,6 +1954,7 @@ function hideBattleUI({ winnerId, loserId, correctAnswer, loserNewHp, loserElimi
     main.textContent = 'WIN';
     sub.textContent  = '答題正確！對手失去一滴血 ❤';
     SFX.win();
+    BGM.play('victory', { loop:false, volume:0.6, fadeIn:0.5 });
   } else if (iLose) {
     main.className   = 'result-main lose';
     main.textContent = 'LOSE';
@@ -1919,6 +1980,8 @@ function hideBattleUI({ winnerId, loserId, correctAnswer, loserNewHp, loserElimi
   }
 
   toast.classList.add('show');
+  // 戰鬥結束後恢復探索音樂
+  setTimeout(() => BGM.play('explore', { volume:0.45, fadeIn:0.8 }), 800);
   setTimeout(()=>{ toast.classList.remove('show'); },
     (loserEliminated && iLose) ? 1600 : 2400);
 }
