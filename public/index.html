@@ -649,6 +649,82 @@ body {
 #btn-map {
   background: rgba(30,40,80,0.7);
 }
+
+/* ═══════════════════ CHARACTER SELECT ═══════════════════ */
+#char-select-screen {
+  display: none;
+  position: fixed; inset: 0;
+  background: linear-gradient(160deg, #0d1117 0%, #1a2340 50%, #0d1117 100%);
+  z-index: 200;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 24px;
+}
+#char-select-screen.active { display: flex; }
+
+#char-select-title {
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 28px; font-weight: 700;
+  color: var(--gold);
+  text-shadow: 0 0 20px rgba(245,200,66,0.6);
+  letter-spacing: 4px;
+}
+
+#char-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 14px;
+  padding: 8px;
+}
+
+.char-card {
+  width: 96px;
+  background: rgba(255,255,255,0.04);
+  border: 2px solid rgba(255,255,255,0.12);
+  border-radius: 12px;
+  padding: 10px 8px 8px;
+  cursor: pointer;
+  transition: transform 0.15s, border-color 0.15s, background 0.15s;
+  display: flex; flex-direction: column;
+  align-items: center; gap: 6px;
+  user-select: none;
+}
+.char-card:hover {
+  transform: translateY(-4px);
+  border-color: var(--gold);
+  background: rgba(245,200,66,0.08);
+}
+.char-card.selected {
+  border-color: var(--gold);
+  background: rgba(245,200,66,0.15);
+  box-shadow: 0 0 16px rgba(245,200,66,0.4);
+}
+.char-card canvas {
+  image-rendering: pixelated;
+  width: 64px; height: 64px;
+}
+.char-card-name {
+  font-family: 'Noto Sans TC', sans-serif;
+  font-size: 12px; color: #ccc;
+  font-weight: 500;
+}
+.char-card.selected .char-card-name { color: var(--gold); }
+
+#char-confirm-btn {
+  padding: 12px 40px;
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 18px; font-weight: 700;
+  letter-spacing: 2px;
+  background: linear-gradient(135deg, var(--gold), #d4891a);
+  color: #1a1200;
+  border: none; border-radius: 8px;
+  cursor: pointer;
+  transition: transform 0.1s, opacity 0.1s;
+  box-shadow: 0 4px 16px rgba(245,200,66,0.3);
+}
+#char-confirm-btn:hover { transform: translateY(-2px); opacity: 0.9; }
+#char-confirm-btn:active { transform: translateY(0); }
 </style>
 </head>
 <body>
@@ -705,6 +781,13 @@ body {
 </div>
 
 <!-- ══════════ HUD ══════════ -->
+<!-- ══════════ CHARACTER SELECT ══════════ -->
+<div id="char-select-screen">
+  <div id="char-select-title">選擇你的角色</div>
+  <div id="char-grid"></div>
+  <button id="char-confirm-btn">確認出戰</button>
+</div>
+
 <div id="hud">
   <div id="player-name">PLAYER</div>
   <div id="hp-display"></div>
@@ -853,9 +936,15 @@ function joinGame() {
   socket = io(CFG.SERVER, { query: { role: 'player' } });
 
   socket.on('connect', () => {
-    socket.emit('player:join', { name, roomId });
     BGM.play('lobby');
-    showWaiting();
+    showCharSelect();   // 先選角，確認後才 join + showWaiting
+    document.getElementById('char-confirm-btn').onclick = () => {
+      document.getElementById('char-select-screen').classList.remove('active');
+      SFX.select();
+      socket.emit('player:join', { name, roomId });
+      socket.emit('player:char', { charKey: selectedCharKey });
+      showWaiting();
+    };
   });
 
   socket.on('connect_error', () => {
@@ -1212,6 +1301,70 @@ const SFX = (() => {
 })();
 
 // ══════════════════════════════════════════
+//  CHARACTER SELECT
+// ══════════════════════════════════════════
+const CHARS = [
+  { key:'char1',  name:'書生',  },
+  { key:'char2',  name:'武士',  },
+  { key:'char3',  name:'魔法師',},
+  { key:'char4',  name:'忍者',  },
+  { key:'char5',  name:'騎士',  },
+  { key:'char6',  name:'弓手',  },
+  { key:'char7',  name:'法師',  },
+  { key:'char8',  name:'暗影',  },
+  { key:'char9',  name:'火焰',  },
+  { key:'char10', name:'冰霜',  },
+];
+
+let selectedCharKey = 'char1';
+
+function showCharSelect() {
+  const screen = document.getElementById('char-select-screen');
+  const grid   = document.getElementById('char-grid');
+  screen.classList.add('active');
+  grid.innerHTML = '';
+
+  CHARS.forEach(({ key, name }) => {
+    const card = document.createElement('div');
+    card.className = 'char-card' + (key === selectedCharKey ? ' selected' : '');
+    card.dataset.key = key;
+
+    // 預覽：用 canvas 顯示 spritesheet 的第一幀（idle_down = 第1欄）
+    const cv = document.createElement('canvas');
+    cv.width = cv.height = 64;
+    const ctx = cv.getContext('2d');
+    const img = new Image();
+    img.onload = () => {
+      // frame 1 (col=1, row=0) = idle down, 32×32
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(img, 32, 0, 32, 32, 0, 0, 64, 64);
+    };
+    img.src = `assets/${key}.png`;
+
+    const label = document.createElement('div');
+    label.className = 'char-card-name';
+    label.textContent = name;
+
+    card.appendChild(cv);
+    card.appendChild(label);
+    card.addEventListener('click', () => {
+      grid.querySelectorAll('.char-card').forEach(c => c.classList.remove('selected'));
+      card.classList.add('selected');
+      selectedCharKey = key;
+      SFX.select();
+    });
+    grid.appendChild(card);
+  });
+
+  document.getElementById('char-confirm-btn').onclick = () => {
+    screen.classList.remove('active');
+    SFX.select();
+    // 通知 server 玩家選擇的角色
+    socket.emit('player:char', { charKey: selectedCharKey });
+  };
+}
+
+// ══════════════════════════════════════════
 //  BGM 管理器
 // ══════════════════════════════════════════
 const BGM = (() => {
@@ -1278,8 +1431,10 @@ function initPhaserGame() {
 
     preload() {
       // ── Spritesheet: 實體檔案路徑 ──
-      // 玩家角色
-      this.load.spritesheet('character', 'assets/character.png', { frameWidth: 32, frameHeight: 32 });
+      // 玩家角色 (char1~char10)
+      for (let i = 1; i <= 10; i++) {
+        this.load.spritesheet('char'+i, 'assets/char'+i+'.png', { frameWidth: 32, frameHeight: 32 });
+      }
       // Bot 角色 (替換圖片時放入 public/assets/ 並用相同格式：4列×4欄，每格32×32)
       this.load.spritesheet('bot1', 'assets/bot1.png', { frameWidth: 32, frameHeight: 32 });
       this.load.spritesheet('bot2', 'assets/bot2.png', { frameWidth: 32, frameHeight: 32 });
@@ -1369,7 +1524,8 @@ function initPhaserGame() {
       this.playerShadow = this.add.image(cx, cy, 'shadow').setDepth(9).setAlpha(0.7);
 
       // Hero sprite — start with idle texture
-      this.localPlayer = this.physics.add.sprite(cx, cy, 'character', 1)
+      const myCharKey = (typeof selectedCharKey !== 'undefined' && selectedCharKey) ? selectedCharKey : 'char1';
+      this.localPlayer = this.physics.add.sprite(cx, cy, myCharKey, 1)
         .setCollideWorldBounds(true)
         .setDepth(10)
         .setOrigin(0.5, 1)   // 腳底錨點
@@ -1378,7 +1534,11 @@ function initPhaserGame() {
       // ── Register walk animations (row × 4 cols, frameWidth=32) ──
       // frame index = row*4 + col
       // 為每個 spritesheet 註冊 walk/idle 動畫
-      ['character','bot1','bot2','bot3'].forEach(texKey => {
+      // 登記所有角色 + bot 的動畫
+      const allTexKeys = [];
+      for(let i=1;i<=10;i++) allTexKeys.push('char'+i);
+      allTexKeys.push('bot1','bot2','bot3');
+      allTexKeys.forEach(texKey => {
         const prefix = texKey === 'character' ? '' : texKey + '_';
         const dirs = [{key:'walk_down',row:0},{key:'walk_left',row:1},{key:'walk_right',row:2},{key:'walk_up',row:3}];
         dirs.forEach(({key,row}) => {
@@ -1398,7 +1558,8 @@ function initPhaserGame() {
           }
         });
       });
-      this.localPlayer.play('idle_down');
+      this._myCharKey = myCharKey;
+      this.localPlayer.play(myCharKey + '_idle_down');
       this._heroMoving = false;
 
       this._facing = 'down';  // down/left/right/up
@@ -1514,8 +1675,8 @@ function initPhaserGame() {
 
     _spawnRemote(p) {
       const shadow    = this.add.image(p.x, p.y, 'shadow').setDepth(8).setAlpha(0.55);
-      const texKey    = p.isBot ? ('bot' + (p.botSheet||1)) : 'character';
-      const animPrefix = p.isBot ? (texKey + '_') : '';
+      const texKey     = p.isBot ? ('bot' + (p.botSheet||1)) : (p.charKey || 'char1');
+      const animPrefix = texKey + '_';
       const sprite    = this.add.sprite(p.x, p.y, texKey, 1)
         .setDepth(9).setOrigin(0.5, 1).setScale(1.5);
       if (p.isBot && p.botTint) sprite.setTint(p.botTint);
@@ -1696,14 +1857,15 @@ function initPhaserGame() {
       const moving = (vx!==0||vy!==0) && state.isAlive && !state.isLocked;
 
       // ── Hero animation: Phaser anims by direction ──
+      const _cp = (this._myCharKey || 'char1') + '_';
       if(moving){
-        const animKey = 'walk_' + this._facing;
+        const animKey = _cp + 'walk_' + this._facing;
         if(!this._heroMoving || this.localPlayer.anims.currentAnim?.key !== animKey){
           this.localPlayer.play(animKey, true);
         }
         this._heroMoving = true;
       } else if(this._heroMoving) {
-        this.localPlayer.play('idle_' + this._facing, true);
+        this.localPlayer.play(_cp + 'idle_' + this._facing, true);
         this._heroMoving = false;
       }
 
