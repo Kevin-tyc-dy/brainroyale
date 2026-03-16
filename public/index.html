@@ -655,7 +655,7 @@ body {
   display: none;
   position: fixed; inset: 0;
   background: linear-gradient(160deg, #0d1117 0%, #1a2340 50%, #0d1117 100%);
-  z-index: 200;
+  z-index: 1100;
   flex-direction: column;
   align-items: center;
   justify-content: center;
@@ -1314,8 +1314,10 @@ const CHARS = [
 let selectedCharKey = 'char1';
 
 function showCharSelect(onConfirm) {
-  const screen = document.getElementById('char-select-screen');
-  const grid   = document.getElementById('char-grid');
+  const screen  = document.getElementById('char-select-screen');
+  const grid    = document.getElementById('char-grid');
+  const lobbyEl = document.getElementById('lobby-screen');
+  if (lobbyEl) lobbyEl.style.display = 'none';
   screen.classList.add('active');
   grid.innerHTML = '';
 
@@ -1355,6 +1357,14 @@ function showCharSelect(onConfirm) {
     screen.classList.remove('active');
     SFX.select();
     if (typeof onConfirm === 'function') onConfirm();
+  };
+  // 若點擊背景外區域可取消回到大廳
+  screen.onclick = (e) => {
+    if (e.target === screen) {
+      screen.classList.remove('active');
+      if (lobbyEl) lobbyEl.style.display = '';
+      document.getElementById('join-btn').disabled = false;
+    }
   };
 }
 
