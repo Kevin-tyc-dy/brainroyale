@@ -939,11 +939,25 @@ function joinGame() {
       BGM.play('lobby');
       socket.emit('player:join', { name, roomId });
       socket.emit('player:char', { charKey: selectedCharKey });
-      showWaiting();
+      // showWaiting() 在收到 player:init 後才呼叫
     });
     socket.on('connect_error', () => {
       document.getElementById('join-btn').disabled = false;
+      showCharSelect(null);  // 回到選角畫面（暫時顯示）
       alert('無法連線至伺服器，請確認伺服器已啟動。');
+    });
+    socket.on('error', ({ code, msg }) => {
+      // Server 拒絕加入（房間不存在、房間已滿等）
+      socket.disconnect();
+      document.getElementById('join-btn').disabled = false;
+      const message = {
+        'INVALID_ROOM': '房間代碼無效，請確認老師提供的代碼是否正確。',
+        'ROOM_FULL':    '房間已滿，請稍後再試。',
+      }[code] || (msg || '加入失敗，請重試。');
+      // 恢復大廳畫面
+      const lobbyEl = document.getElementById('lobby-screen');
+      if (lobbyEl) lobbyEl.style.display = '';
+      alert(message);
     });
     setupSocketEvents();
   });
@@ -995,6 +1009,8 @@ function setupSocketEvents() {
     } else {
       state.mapData = null; state.wallTiles = null;
     }
+    // 成功加入房間後才顯示等待畫面
+    showWaiting();
   });
 
   socket.on('teacher:world_update_count', ({ count }) => {
