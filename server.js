@@ -1540,13 +1540,10 @@ io.on('connection', socket => {
   });
 
   socket.on('player:char', ({ charKey }) => {
-    const room = findRoomBySocket(socket.id);
-    if (!room) return;
-    const p = room.players.get(socket.id);
-    if (!p) return;
+    if (!curPlayer) return;
     // 只接受 char1~char10
     if (/^char([1-9]|10)$/.test(charKey)) {
-      p.charKey = charKey;
+      curPlayer.charKey = charKey;
     }
   });
 
