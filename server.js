@@ -365,6 +365,7 @@ function spawnBots(room, count) {
       wins: 0, lastMoveAt: Date.now(),
       spectateTargetId: null, cooldowns: new Map(),
       isBot: true,
+      streak: 0,
       botTargetId: null,
       botWanderAngle: Math.random() * Math.PI * 2,
       botSheet: (i % 3) + 1,  // 1=bot1, 2=bot2, 3=bot3 (spritesheet)
@@ -767,7 +768,7 @@ function broadcastWorld(room) {
       if(p.id===viewer.id) return;
       // Spectators see all; alive players limited by fog
       if(viewer.isAlive && dist(viewer,p) > CONFIG.FOG_RADIUS) return;
-      list.push({ id:p.id, name:p.name, x:p.x, y:p.y, hp:p.hp, isAlive:p.isAlive, isBot:!!p.isBot, botSheet:p.botSheet||1, botTint:p.botTint||null, charKey:p.charKey||'char1' });
+      list.push({ id:p.id, name:p.name, x:p.x, y:p.y, hp:p.hp, isAlive:p.isAlive, isBot:!!p.isBot, botSheet:p.botSheet||1, botTint:p.botTint||null, charKey:p.charKey||'char1', streak:p.streak||0 });
     });
     io.to(viewer.id).emit('world:update',{ players:list, aliveCount:alive });
   });
@@ -1058,7 +1059,37 @@ function resolveBattle(room, battle, isTimeout) {
     });
     loserNewHp = null; // signal draw to client
   }
-  if(winnerId){ const w=room.players.get(winnerId); if(w) w.wins=(w.wins||0)+1; }
+  if(winnerId){
+    const w=room.players.get(winnerId);
+    if(w){
+      w.wins = (w.wins||0)+1;
+      w.streak = (w.streak||0)+1;
+      // 連勝回血：連勝 3 或 5+ 且未滿血時回復 1 滴
+      let healed = false;
+      if((w.streak===3 || w.streak>=5) && w.hp < CONFIG.MAX_HP && !w.isBot){
+        w.hp = Math.min(CONFIG.MAX_HP, w.hp+1);
+        io.to(w.id).emit('player:hp_update', { playerId:w.id, newHp:w.hp });
+        toTeachers(room.id,'teacher:hp_update',{ playerId:w.id, newHp:w.hp });
+        healed = true;
+      }
+      // 速度加成：連勝 2+ 給予 speedBoostUntil
+      if(w.streak>=2 && !w.isBot){
+        const boostSec = w.streak>=5 ? 5000 : 3000;
+        w.speedBoostUntil = Date.now() + boostSec;
+        io.to(w.id).emit('player:streak', { streak:w.streak, speedBoostMs:boostSec, healed });
+      } else if(!w.isBot){
+        io.to(w.id).emit('player:streak', { streak:w.streak, speedBoostMs:0, healed });
+      }
+    }
+  }
+  if(loserId){
+    const l=room.players.get(loserId);
+    if(l){ l.streak=0; }
+  }
+  // draw: 雙方 streak 歸零
+  if(!winnerId && !loserId){
+    [pA,pB].forEach(p=>{ if(p) p.streak=0; });
+  }
 
   // Result payload
   const result = {
@@ -1510,7 +1541,7 @@ io.on('connection', socket => {
       id:socket.id, name:safe, roomId:room.id,
       x:sp.x, y:sp.y,
       hp:CONFIG.MAX_HP, isAlive:true, isLocked:false,
-      wins:0, lastMoveAt:Date.now(),
+      wins:0, streak:0, lastMoveAt:Date.now(),
       spectateTargetId:null, cooldowns:new Map(),
     };
     room.players.set(socket.id,player);
