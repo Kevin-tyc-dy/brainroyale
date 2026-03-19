@@ -725,6 +725,73 @@ body {
 }
 #char-confirm-btn:hover { transform: translateY(-2px); opacity: 0.9; }
 #char-confirm-btn:active { transform: translateY(0); }
+
+/* ═══════════════════ STREAK ═══════════════════ */
+#streak-banner {
+  display: none;
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%) scale(0.5);
+  z-index: 500;
+  text-align: center;
+  pointer-events: none;
+  transition: none;
+}
+#streak-banner.show {
+  display: block;
+  animation: streakPop 0.8s cubic-bezier(0.175,0.885,0.32,1.275) forwards;
+}
+@keyframes streakPop {
+  0%   { transform: translate(-50%,-50%) scale(0.3); opacity:0; }
+  50%  { transform: translate(-50%,-50%) scale(1.15); opacity:1; }
+  70%  { transform: translate(-50%,-50%) scale(0.95); opacity:1; }
+  85%  { transform: translate(-50%,-50%) scale(1.05); opacity:1; }
+  100% { transform: translate(-50%,-50%) scale(1); opacity:0; }
+}
+#streak-emoji {
+  font-size: 52px;
+  display: block;
+  filter: drop-shadow(0 0 16px rgba(255,160,0,0.9));
+}
+#streak-text {
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 32px;
+  font-weight: 700;
+  color: #fff;
+  text-shadow: 0 0 20px rgba(255,140,0,0.8), 0 2px 4px rgba(0,0,0,0.8);
+  letter-spacing: 3px;
+  display: block;
+  margin-top: -4px;
+}
+#streak-sub {
+  font-family: 'Noto Sans TC', sans-serif;
+  font-size: 14px;
+  color: #ffdd88;
+  display: block;
+  margin-top: 4px;
+  text-shadow: 0 1px 3px rgba(0,0,0,0.8);
+}
+
+/* 速度加成指示器 */
+#speed-boost-bar {
+  display: none;
+  position: fixed;
+  bottom: 100px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 300;
+  background: rgba(255,140,0,0.15);
+  border: 1px solid rgba(255,140,0,0.5);
+  border-radius: 20px;
+  padding: 4px 14px;
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 13px;
+  color: #ffbb44;
+  letter-spacing: 1px;
+  backdrop-filter: blur(4px);
+}
+#speed-boost-bar.active { display: block; }
 </style>
 </head>
 <body>
@@ -787,6 +854,14 @@ body {
   <div id="char-grid"></div>
   <button id="char-confirm-btn">確認出戰</button>
 </div>
+
+<!-- ══════════ STREAK BANNER ══════════ -->
+<div id="streak-banner">
+  <span id="streak-emoji">🔥</span>
+  <span id="streak-text">STREAK!</span>
+  <span id="streak-sub"></span>
+</div>
+<div id="speed-boost-bar">⚡ 速度加成中</div>
 
 <div id="hud">
   <div id="player-name">PLAYER</div>
@@ -1040,6 +1115,8 @@ function setupSocketEvents() {
   socket.on('game:countdown', () => {
     if (!state.gameStarted) {
       state.gameStarted = true;
+      streakState.current = 0;
+      streakState.speedBoostUntil = 0;
       startCountdown(() => {
         BGM.play('explore');
         initPhaserGame();
@@ -1072,6 +1149,15 @@ function setupSocketEvents() {
 
   socket.on('player:knockback', ({ myNewPos }) => {
     if (gameScene) gameScene.onKnockback(myNewPos);
+  });
+
+  socket.on('player:streak', ({ streak, speedBoostMs, healed }) => {
+    streakState.current = streak;
+    if (streak >= 2) {
+      showStreakBanner(streak, healed);
+      if (speedBoostMs > 0) applySpeedBoost(speedBoostMs);
+    }
+    if (healed && gameScene) gameScene.updateHpDisplay(state.myHp + 1);
   });
 
   socket.on('player:hp_update', ({ playerId, newHp, source }) => {
@@ -1432,6 +1518,66 @@ const BGM = (() => {
   return { play, stop };
 })();
 
+// ══════════════════════════════════════════
+//  STREAK SYSTEM
+// ══════════════════════════════════════════
+const streakState = {
+  current: 0,
+  speedBoostUntil: 0,
+  boostTimer: null,
+};
+
+function showStreakBanner(streak, healed) {
+  const banner = document.getElementById('streak-banner');
+  const emoji  = document.getElementById('streak-emoji');
+  const text   = document.getElementById('streak-text');
+  const sub    = document.getElementById('streak-sub');
+
+  // 決定顯示內容
+  const configs = {
+    2: { emoji:'🔥', text:'連勝 × 2！',  sub:'速度加成 3 秒！', color:'#ff8c00' },
+    3: { emoji:'🔥🔥', text:'連勝 × 3！', sub:'速度加成 + 回血！', color:'#ff6000' },
+    4: { emoji:'💥', text:'連勝 × 4！',  sub:'勢不可擋！',       color:'#ff4000' },
+    5: { emoji:'⚡💥⚡', text:'連勝 × 5！',sub:'速度加成 5 秒 + 回血！', color:'#ff2000' },
+  };
+  const cfg = configs[Math.min(streak, 5)] || configs[5];
+
+  emoji.textContent = cfg.emoji;
+  text.textContent  = cfg.text;
+  text.style.color  = cfg.color;
+  sub.textContent   = healed ? cfg.sub + ' ❤ 回血！' : cfg.sub;
+
+  // 重置動畫
+  banner.classList.remove('show');
+  void banner.offsetWidth;
+  banner.classList.add('show');
+
+  // 音效：連勝專屬（用 SFX 組合）
+  SFX.win();
+  setTimeout(() => SFX.invincible(), 200);
+
+  setTimeout(() => banner.classList.remove('show'), 1500);
+}
+
+function applySpeedBoost(ms) {
+  streakState.speedBoostUntil = Date.now() + ms;
+  const bar = document.getElementById('speed-boost-bar');
+  bar.classList.add('active');
+  bar.textContent = `⚡ 速度加成中`;
+
+  if (streakState.boostTimer) clearTimeout(streakState.boostTimer);
+  streakState.boostTimer = setTimeout(() => {
+    streakState.speedBoostUntil = 0;
+    bar.classList.remove('active');
+  }, ms);
+}
+
+// 供 _move() 使用的速度倍率
+function getSpeedMultiplier() {
+  if (Date.now() < streakState.speedBoostUntil) return 1.25;
+  return 1.0;
+}
+
 function initPhaserGame() {
   buildHpDisplay();
 
@@ -1658,6 +1804,14 @@ function initPhaserGame() {
         rp.targetX = p.x;
         rp.targetY = p.y;
         rp.hp = p.hp; rp.isAlive = p.isAlive; rp.isBot = !!p.isBot;
+        // 更新連勝標記
+        const newStreak = p.streak || 0;
+        if (newStreak !== rp.streak) {
+          rp.streak = newStreak;
+          if (rp.streakText) {
+            rp.streakText.setText(newStreak >= 2 ? '🔥'.repeat(Math.min(newStreak,5)) : '');
+          }
+        }
 
         // alive / ghost — 只在狀態改變時才切換，不打斷動畫
         const wasAlive = rp._wasAlive !== false;
@@ -1688,6 +1842,7 @@ function initPhaserGame() {
           rp.sprite.destroy();
           rp.nameText.destroy();
           if(rp.shadow) rp.shadow.destroy();
+          if(rp.streakText) rp.streakText.destroy();
           state.remotePlayers.delete(id);
         }
       });
@@ -1707,14 +1862,21 @@ function initPhaserGame() {
       }).setOrigin(0.5,1).setDepth(10);
       sprite.play(animPrefix + 'idle_down');
 
+      // 連勝標記文字（顯示在名字上方）
+      const streakText = this.add.text(p.x, p.y-62, '', {
+        fontFamily:'Rajdhani', fontSize:'12px',
+        color:'#ffaa00', stroke:'#000', strokeThickness:3,
+      }).setOrigin(0.5,1).setDepth(11);
+
       state.remotePlayers.set(p.id, {
-        sprite, nameText, shadow,
+        sprite, nameText, shadow, streakText,
         hp:p.hp, isAlive:p.isAlive, isBot:!!p.isBot,
         botSheet:p.botSheet||1, botTint:p.botTint||null,
         animPrefix,
         facing:'down', wasMoving:false,
         serverX:p.x, serverY:p.y,
         targetX:p.x, targetY:p.y,
+        streak:0,
       });
     }
 
@@ -1923,7 +2085,8 @@ function initPhaserGame() {
     }
 
     _move() {
-      const k = this.keys, sp = CFG.SPEED;
+      const k = this.keys;
+      const sp = CFG.SPEED * (typeof getSpeedMultiplier==='function' ? getSpeedMultiplier() : 1);
       let vx=0, vy=0;
       // ── Keyboard ──
       if(k.A.isDown||k.LEFT.isDown)  vx-=1;
@@ -1969,6 +2132,10 @@ function initPhaserGame() {
           else { rp.sprite.y += dy * LERP; }
 
           rp.nameText.setPosition(rp.sprite.x, rp.sprite.y - 48);
+          // 連勝火焰標記
+          if (rp.streak >= 2 && rp.streakText) {
+            rp.streakText.setPosition(rp.sprite.x, rp.sprite.y - 62);
+          }
           if(rp.shadow) rp.shadow.setPosition(rp.sprite.x, rp.sprite.y - 2);
         }
         if(!rp.isAlive) return;
