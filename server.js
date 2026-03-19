@@ -365,7 +365,10 @@ function spawnBots(room, count) {
       wins: 0, lastMoveAt: Date.now(),
       spectateTargetId: null, cooldowns: new Map(),
       isBot: true,
-      streak: 0,
+      streak:0, maxStreak:0,
+      battleWins:0, battleLoses:0, battleDraws:0,
+      correctAnswers:0, wrongAnswers:0,
+      joinedAt: Date.now(),
       botTargetId: null,
       botWanderAngle: Math.random() * Math.PI * 2,
       botSheet: (i % 3) + 1,  // 1=bot1, 2=bot2, 3=bot3 (spritesheet)
@@ -865,7 +868,26 @@ function eliminate(room, pid) {
     .filter(x=>x.isAlive&&x.id!==pid)
     .map(x=>({id:x.id,name:x.name}));
 
-  io.to(pid).emit('player:eliminated',{ spectateTargets:targets });
+  const survivalMs = Date.now() - (p.joinedAt || Date.now());
+  const totalBattles = (p.battleWins||0)+(p.battleLoses||0)+(p.battleDraws||0);
+  const accuracy = totalBattles > 0
+    ? Math.round((p.correctAnswers||0) / totalBattles * 100)
+    : 0;
+
+  io.to(pid).emit('player:eliminated',{
+    spectateTargets: targets,
+    stats: {
+      battleWins:    p.battleWins||0,
+      battleLoses:   p.battleLoses||0,
+      battleDraws:   p.battleDraws||0,
+      correctAnswers:p.correctAnswers||0,
+      totalBattles,
+      accuracy,
+      maxStreak:     p.maxStreak||0,
+      survivalMs,
+      finalHp:       p.hp,
+    }
+  });
   room.stats.totalElim++;
   toTeachers(room.id,'teacher:eliminated',{
     playerId:pid, playerName:p.name, totalElim:room.stats.totalElim,
@@ -878,6 +900,25 @@ function eliminate(room, pid) {
     const w=alive[0];
     if(w) {
       io.to(room.id).emit('game:winner',{ winnerId:w.id, winnerName:w.name });
+      // 單獨送個人統計給勝者
+      const survivalMs = Date.now() - (w.joinedAt || Date.now());
+      const totalBattles = (w.battleWins||0)+(w.battleLoses||0)+(w.battleDraws||0);
+      const accuracy = totalBattles > 0
+        ? Math.round((w.correctAnswers||0) / totalBattles * 100) : 0;
+      io.to(w.id).emit('player:final_stats', {
+        isWinner: true,
+        stats: {
+          battleWins:    w.battleWins||0,
+          battleLoses:   w.battleLoses||0,
+          battleDraws:   w.battleDraws||0,
+          correctAnswers:w.correctAnswers||0,
+          totalBattles,
+          accuracy,
+          maxStreak:     w.maxStreak||0,
+          survivalMs,
+          finalHp:       w.hp,
+        }
+      });
       toTeachers(room.id,'teacher:game_state',{ state:'ended' });
       console.log(`[Win] ${w.name}`);
     }
@@ -1063,7 +1104,12 @@ function resolveBattle(room, battle, isTimeout) {
     const w=room.players.get(winnerId);
     if(w){
       w.wins = (w.wins||0)+1;
+      w.battleWins = (w.battleWins||0)+1;
+      // 勝者答題正確
+      const wAns2 = battle.answers.get(w.id);
+      if(wAns2?.isCorrect) w.correctAnswers = (w.correctAnswers||0)+1;
       w.streak = (w.streak||0)+1;
+      w.maxStreak = Math.max(w.maxStreak||0, w.streak);
       // 連勝回血：連勝 3 或 5+ 且未滿血時回復 1 滴
       let healed = false;
       if((w.streak===3 || w.streak>=5) && w.hp < CONFIG.MAX_HP && !w.isBot){
@@ -1084,11 +1130,22 @@ function resolveBattle(room, battle, isTimeout) {
   }
   if(loserId){
     const l=room.players.get(loserId);
-    if(l){ l.streak=0; }
+    if(l){
+      l.streak=0;
+      l.battleLoses = (l.battleLoses||0)+1;
+      const lAns2 = battle.answers.get(l.id);
+      if(lAns2 && !lAns2.isCorrect) l.wrongAnswers = (l.wrongAnswers||0)+1;
+      else if(!lAns2) l.wrongAnswers = (l.wrongAnswers||0)+1; // timeout
+    }
   }
-  // draw: 雙方 streak 歸零
+  // draw: 雙方 streak 歸零，各記一平
   if(!winnerId && !loserId){
-    [pA,pB].forEach(p=>{ if(p) p.streak=0; });
+    [pA,pB].forEach(p=>{
+      if(p){
+        p.streak=0;
+        p.battleDraws = (p.battleDraws||0)+1;
+      }
+    });
   }
 
   // Result payload
@@ -1541,7 +1598,10 @@ io.on('connection', socket => {
       id:socket.id, name:safe, roomId:room.id,
       x:sp.x, y:sp.y,
       hp:CONFIG.MAX_HP, isAlive:true, isLocked:false,
-      wins:0, streak:0, lastMoveAt:Date.now(),
+      wins:0, streak:0, maxStreak:0, lastMoveAt:Date.now(),
+      battleWins:0, battleLoses:0, battleDraws:0,
+      correctAnswers:0, wrongAnswers:0,
+      joinedAt: Date.now(),
       spectateTargetId:null, cooldowns:new Map(),
     };
     room.players.set(socket.id,player);
