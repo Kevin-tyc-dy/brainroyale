@@ -162,6 +162,9 @@ const CONFIG = {
   ],
   ZONE_DMG_INTERVAL: 2000,
   ZONE_DMG_HP:       1,
+  ITEM_MAX:          10,   // 地圖上最多同時存在道具數
+  ITEM_SPAWN_MS:     8000, // 每 8 秒嘗試 spawn 一個
+  ITEM_PICKUP_D:     48,   // 拾取距離（px）
   COUNTDOWN_SEC:     3,
 };
 
@@ -394,6 +397,74 @@ function isBotBlocked(wallSet, tileSize, px, py) {
     }
   }
   return false;
+}
+
+// ══════════════════════════════════════════
+//  ITEM SYSTEM
+// ══════════════════════════════════════════
+const ITEM_TYPES = [
+  { type:'shield', label:'護盾',  emoji:'🛡', color:'#4fc3f7' },
+  { type:'speed',  label:'加速',  emoji:'⚡', color:'#fff176' },
+  { type:'heal',   label:'回血',  emoji:'❤',  color:'#ef9a9a' },
+];
+
+function spawnItem(room) {
+  if (!room.gameStarted || room.isPaused) return;
+  if (!room.items) room.items = new Map();
+  if (room.items.size >= CONFIG.ITEM_MAX) return;
+
+  // 在安全圈內隨機位置 spawn
+  const zx = room.zone.centerX, zy = room.zone.centerY;
+  const zr = room.zone.currentRadius * 0.85;
+  const angle = Math.random() * Math.PI * 2;
+  const r     = Math.random() * zr;
+  const x = Math.round(zx + Math.cos(angle) * r);
+  const y = Math.round(zy + Math.sin(angle) * r);
+
+  const def  = ITEM_TYPES[Math.floor(Math.random() * ITEM_TYPES.length)];
+  const id   = 'item_' + Date.now() + '_' + Math.random().toString(36).slice(2,6);
+  const item = { id, type: def.type, x, y };
+  room.items.set(id, item);
+
+  io.to(room.id).emit('item:spawn', item);
+}
+
+function checkItemPickup(room, player) {
+  if (!room.items || room.items.size === 0) return;
+  if (!player.isAlive || player.isLocked || player.isBot) return;
+
+  room.items.forEach((item, id) => {
+    const d = Math.hypot(player.x - item.x, player.y - item.y);
+    if (d > CONFIG.ITEM_PICKUP_D) return;
+
+    room.items.delete(id);
+    io.to(room.id).emit('item:remove', { id });
+
+    // 套用效果
+    switch(item.type) {
+      case 'shield':
+        player.hasShield = true;
+        io.to(player.id).emit('item:effect', { type:'shield', msg:'🛡 護盾啟動！下一場對戰答錯不扣血' });
+        break;
+      case 'speed':
+        player.speedBoostUntil = Date.now() + 5000;
+        io.to(player.id).emit('item:effect', { type:'speed', msg:'⚡ 速度提升 5 秒！' });
+        break;
+      case 'heal':
+        if (player.hp < (room.customMaxHp || CONFIG.MAX_HP)) {
+          player.hp = Math.min(room.customMaxHp || CONFIG.MAX_HP, player.hp + 1);
+          io.to(room.id).emit('player:hp_update', { playerId:player.id, newHp:player.hp });
+          toTeachers(room.id,'teacher:hp_update',{ playerId:player.id, newHp:player.hp });
+        }
+        io.to(player.id).emit('item:effect', { type:'heal', msg:'❤ 回復 1 滴血！' });
+        break;
+    }
+  });
+}
+
+function tickItems(room) {
+  // 每次 tick 檢查所有玩家拾取
+  room.players.forEach(p => checkItemPickup(room, p));
 }
 
 function tickBots(room) {
@@ -708,6 +779,10 @@ function startGame(room) {
   if(room.gameStarted) return;
   room.gameStarted = true;
   room.startAt     = Date.now();
+  // 套用教師自訂參數
+  if (room.customMaxHp) {
+    room.players.forEach(p => { p.hp = room.customMaxHp; });
+  }
   if (room.botEnabled) {
     const humanCount = [...room.players.values()].filter(p=>!p.isBot).length;
     const wanted = room.botCount !== null ? room.botCount : CONFIG.MAX_PLAYERS - humanCount;
@@ -731,14 +806,20 @@ function startGame(room) {
   io.to(room.id).emit('map:load', { mapData: mapPayload });
 
   // Broadcast countdown to players
-  io.to(room.id).emit('game:countdown');
+  io.to(room.id).emit('game:countdown', {
+    battleTimeout: room.customBattleTimeout || CONFIG.BATTLE_TIMEOUT,
+    maxHp:         room.customMaxHp         || CONFIG.MAX_HP,
+  });
   toTeachers(room.id,'teacher:game_state',{ state:'running' });
 
   broadcastZone(room);
 
+  room.items = new Map(); // 初始化道具 Map
   room.intervals.sync   = setInterval(()=> broadcastWorld(room), CONFIG.SYNC_INTERVAL);
   room.intervals.zone   = setInterval(()=> tickZone(room), 1000);
   room.intervals.zoneDmg= setInterval(()=> applyZoneDmg(room), CONFIG.ZONE_DMG_INTERVAL);
+  room.intervals.item   = setInterval(()=> spawnItem(room), CONFIG.ITEM_SPAWN_MS);
+  room.intervals.itemTk = setInterval(()=> tickItems(room), 200);
   room.intervals.bot    = setInterval(()=> tickBots(room), BOT_TICK_MS);
 }
 
@@ -751,6 +832,10 @@ function pauseGame(room) {
 }
 
 function forceEndGame(room) {
+  if (room.items) {
+    room.items.forEach((item, id) => io.to(room.id).emit('item:remove', { id }));
+    room.items.clear();
+  }
   Object.values(room.intervals).forEach(clearInterval);
   room.gameStarted = false;
   io.to(room.id).emit('game:force_ended',{ message:'教師已結束本局遊戲' });
@@ -956,9 +1041,10 @@ async function triggerBattle(room, pA, pB) {
 
   console.log(`[Battle] ${pA.name} vs ${pB.name} | Q: ${q.id}`);
 
+  const battleMs = (room.customBattleTimeout || CONFIG.BATTLE_TIMEOUT);
   battle.timeoutRef = setTimeout(()=>{
     if(!battle.resolved) resolveBattle(room,battle,true);
-  }, CONFIG.BATTLE_TIMEOUT+500);
+  }, battleMs+500);
   if (pA.isBot) botAnswerBattle(room, battle, pA.id);
   if (pB.isBot) botAnswerBattle(room, battle, pB.id);
 }
@@ -1063,11 +1149,18 @@ function resolveBattle(room, battle, isTimeout) {
   let loserNewHp=null, loserElim=false;
   if(loserId){
     const loser=room.players.get(loserId);
-    loser.hp=Math.max(0,loser.hp-1);
-    loserNewHp=loser.hp;
-    io.to(room.id).emit('player:hp_update',{ playerId:loserId, newHp:loserNewHp });
-    toTeachers(room.id,'teacher:hp_update',{ playerId:loserId, newHp:loserNewHp });
-    if(loser.hp<=0) loserElim=true;
+    // 護盾保護：答錯不扣血，但消耗護盾
+    if(loser.hasShield) {
+      loser.hasShield = false;
+      loserNewHp = loser.hp;
+      io.to(loser.id).emit('item:effect', { type:'shield_used', msg:'🛡 護盾抵擋了傷害！' });
+    } else {
+      loser.hp=Math.max(0,loser.hp-1);
+      loserNewHp=loser.hp;
+      io.to(room.id).emit('player:hp_update',{ playerId:loserId, newHp:loserNewHp });
+      toTeachers(room.id,'teacher:hp_update',{ playerId:loserId, newHp:loserNewHp });
+      if(loser.hp<=0) loserElim=true;
+    }
   } else if(isTimeout && !winnerId) {
     // Draw on timeout: both lose 1HP
     [pA, pB].forEach(p => {
@@ -1490,6 +1583,49 @@ io.on('connection', socket => {
 
  
     // ── Bot 設定 ──────────────────────────────────────────
+    socket.on('teacher:game_settings', ({ roomId, battleTimeout, maxHp, zoneSpeed }) => {
+      const room = getRoom(roomId || teacherRoom);
+      if (!room || room.gameStarted) return;
+
+      // 答題時限（毫秒）
+      if (battleTimeout) room.customBattleTimeout = Math.max(5000, Math.min(60000, Number(battleTimeout)));
+
+      // 初始血量
+      if (maxHp) room.customMaxHp = Math.max(1, Math.min(10, Number(maxHp)));
+
+      // 安全圈速度：修改 zone stages 的時間點
+      // 快=時間縮短50%, 正常=不變, 慢=時間延長50%
+      if (zoneSpeed) {
+        const base = CONFIG.ZONE_STAGES;
+        const mul = zoneSpeed === 'fast' ? 0.5 : zoneSpeed === 'slow' ? 1.5 : 1.0;
+        room.zone.stages = base.map((s, i) => ({
+          at:     i === 0 ? 0 : Math.round(s.at * mul),
+          radius: s.radius,
+        }));
+        room.customZoneSpeed = zoneSpeed;
+      }
+
+      const savedSettings = {
+        battleTimeout: room.customBattleTimeout || CONFIG.BATTLE_TIMEOUT,
+        maxHp:         room.customMaxHp         || CONFIG.MAX_HP,
+        zoneSpeed:     room.customZoneSpeed      || 'normal',
+      };
+      socket.emit('teacher:settings_saved', savedSettings);
+      // 同時廣播給所有玩家，讓 client 更新 CFG
+      io.to(room.id).emit('game:settings_update', savedSettings);
+      console.log(`[Settings] room=${roomId} timeout=${room.customBattleTimeout} hp=${room.customMaxHp} zone=${room.customZoneSpeed}`);
+    });
+
+    socket.on('teacher:get_game_settings', ({ roomId }) => {
+      const room = rooms.get(roomId || teacherRoom);
+      if (!room) return;
+      socket.emit('teacher:settings_saved', {
+        battleTimeout: room.customBattleTimeout || CONFIG.BATTLE_TIMEOUT,
+        maxHp:         room.customMaxHp         || CONFIG.MAX_HP,
+        zoneSpeed:     room.customZoneSpeed      || 'normal',
+      });
+    });
+
     socket.on('teacher:bot_settings', ({ roomId, botEnabled, botCount }) => {
       const room = getRoom(roomId || teacherRoom);  // getRoom 會自動建立房間
       if (!room) { socket.emit('bot:error', { msg: '找不到房間' }); return; }
@@ -1567,7 +1703,7 @@ io.on('connection', socket => {
     const player={
       id:socket.id, name:safe, roomId:room.id,
       x:sp.x, y:sp.y,
-      hp:CONFIG.MAX_HP, isAlive:true, isLocked:false,
+      hp:room.customMaxHp || CONFIG.MAX_HP, isAlive:true, isLocked:false,
       wins:0, streak:0, maxStreak:0, lastMoveAt:Date.now(),
       battleWins:0, battleLoses:0, battleDraws:0,
       correctAnswers:0, wrongAnswers:0,
