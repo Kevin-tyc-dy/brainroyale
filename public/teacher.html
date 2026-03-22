@@ -421,6 +421,50 @@ table.import-tbl tr.row-ok td  { }
       <div id="bot-status" style="font-family:var(--mono);font-size:10px;color:var(--amber)">Bot：自動補滿至 30 人</div>
       <button onclick="applyBotSettings()" style="margin-top:6px;width:100%;font-family:var(--mono);font-size:11px;background:var(--amberD);border:1px solid var(--amber);color:var(--amber);padding:5px 0;border-radius:var(--r);cursor:pointer">✔ 套用 Bot 設定</button>
     </div>
+
+    <!-- ── 遊戲參數設定 ── -->
+    <div style="background:var(--bg2);border:1px solid var(--borderL);border-radius:var(--r);padding:8px 10px;margin-bottom:10px">
+      <div style="font-family:var(--mono);font-size:10px;color:var(--muted);letter-spacing:1px;margin-bottom:8px">⚙ 遊戲參數設定</div>
+
+      <!-- 答題時限 -->
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+        <span style="font-family:var(--mono);font-size:12px;color:var(--muted);white-space:nowrap;width:72px">⏱ 答題時限</span>
+        <select id="setting-timeout" onchange="updateGameSettings()"
+          style="flex:1;font-family:var(--mono);font-size:12px;background:var(--bg2);border:1px solid var(--borderL);color:var(--text);padding:4px 8px;border-radius:var(--r)">
+          <option value="10000">10 秒</option>
+          <option value="15000" selected>15 秒（預設）</option>
+          <option value="20000">20 秒</option>
+          <option value="30000">30 秒</option>
+        </select>
+      </div>
+
+      <!-- 初始血量 -->
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+        <span style="font-family:var(--mono);font-size:12px;color:var(--muted);white-space:nowrap;width:72px">❤ 初始血量</span>
+        <select id="setting-hp" onchange="updateGameSettings()"
+          style="flex:1;font-family:var(--mono);font-size:12px;background:var(--bg2);border:1px solid var(--borderL);color:var(--text);padding:4px 8px;border-radius:var(--r)">
+          <option value="3">3 滴</option>
+          <option value="5" selected>5 滴（預設）</option>
+          <option value="7">7 滴</option>
+          <option value="10">10 滴</option>
+        </select>
+      </div>
+
+      <!-- 安全圈速度 -->
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+        <span style="font-family:var(--mono);font-size:12px;color:var(--muted);white-space:nowrap;width:72px">🔵 縮圈速度</span>
+        <select id="setting-zone" onchange="updateGameSettings()"
+          style="flex:1;font-family:var(--mono);font-size:12px;background:var(--bg2);border:1px solid var(--borderL);color:var(--text);padding:4px 8px;border-radius:var(--r)">
+          <option value="fast">快速（50%時間）</option>
+          <option value="normal" selected>正常（預設）</option>
+          <option value="slow">慢速（150%時間）</option>
+        </select>
+      </div>
+
+      <div id="settings-status" style="font-family:var(--mono);font-size:10px;color:var(--amber);margin-top:2px"></div>
+      <button onclick="applyGameSettings()"
+        style="margin-top:6px;width:100%;font-family:var(--mono);font-size:11px;background:rgba(34,197,94,0.12);border:1px solid #22c55e;color:#22c55e;padding:5px 0;border-radius:var(--r);cursor:pointer">✔ 套用遊戲設定</button>
+    </div>
     <button class="cbtn cbtn-start" id="bs" onclick="ctrl('start')" disabled>
       <span class="icon">▶</span><div><div class="lbl">Start Game</div><div class="sub">Begin round for all players</div></div>
     </button>
@@ -770,6 +814,7 @@ function switchTab(name){
     loadMapList();
     socket.emit('map:get_room_map', { roomId: getRoomId() });
     socket.emit('teacher:get_bot_settings', { roomId: getRoomId() });
+    socket.emit('teacher:get_game_settings', { roomId: getRoomId() });
   }
 }
 
@@ -829,6 +874,11 @@ function createRoom(){
 function attachSocketEvents(){
   // socket events 已在 createRoom() 裡初始化，這裡只掛其餘事件
   // (保留供向下相容)
+  socket.on('teacher:settings_saved', ({ battleTimeout, maxHp, zoneSpeed }) => {
+    const labels = { fast:'快速', normal:'正常', slow:'慢速' };
+    toast(`✅ 設定已儲存：${battleTimeout/1000}秒 / ${maxHp}滴 / 縮圈${labels[zoneSpeed]||zoneSpeed}`);
+  });
+
   socket.on('connect',()=>{
     conn=true; setStatus('ok','ONLINE');
     enableCtrl(true); syncBtns();
@@ -1017,6 +1067,19 @@ function attachSocketEvents(){
     if (inp) inp.value  = botCount !== null ? botCount : '';
     updateBotSettings();
   });
+  socket.on('teacher:settings_saved', ({ battleTimeout, maxHp, zoneSpeed }) => {
+    // 同步 UI 顯示當前設定值
+    const toEl   = document.getElementById('setting-timeout');
+    const hpEl   = document.getElementById('setting-hp');
+    const zoneEl = document.getElementById('setting-zone');
+    if (toEl   && battleTimeout) toEl.value   = String(battleTimeout);
+    if (hpEl   && maxHp)         hpEl.value   = String(maxHp);
+    if (zoneEl && zoneSpeed)     zoneEl.value = zoneSpeed;
+    document.getElementById('settings-status').textContent =
+      `✅ 已套用：⏱${battleTimeout/1000}秒　❤${maxHp}滴　🔵${{fast:'快速',normal:'正常',slow:'慢速'}[zoneSpeed]||zoneSpeed}`;
+    updateGameSettings();
+  });
+
   socket.on('bot:error', ({ msg }) => {
     document.getElementById('bot-status').textContent = '⚠ ' + msg;
   });
@@ -1651,6 +1714,27 @@ renderMap();
     // 更新狀態顯示，但不立即送出（讓 applyBotSettings 送出）
     document.getElementById('bot-status').title = `roomId=${teacherRoom}, botEnabled=${botEnabled}, botCount=${botCount}`;
   }
+  function updateGameSettings() {
+    const timeout = document.getElementById('setting-timeout').value;
+    const hp      = document.getElementById('setting-hp').value;
+    const zone    = document.getElementById('setting-zone').value;
+    const labels  = { fast:'快速', normal:'正常', slow:'慢速' };
+    document.getElementById('settings-status').textContent =
+      `⏱ ${parseInt(timeout)/1000}秒　❤ ${hp}滴　🔵 縮圈${labels[zone]}`;
+  }
+
+  function applyGameSettings() {
+    if (!socket || !conn) { toast('未連線'); return; }
+    const rid     = getRoomId();
+    const timeout = parseInt(document.getElementById('setting-timeout').value);
+    const hp      = parseInt(document.getElementById('setting-hp').value);
+    const zone    = document.getElementById('setting-zone').value;
+    socket.emit('teacher:game_settings', { roomId:rid, battleTimeout:timeout, maxHp:hp, zoneSpeed:zone });
+    toast(`✅ 已套用：${timeout/1000}秒 / ${hp}滴血 / 縮圈${zone}`);
+    const el = document.getElementById('settings-status');
+    if (el) { el.textContent = '已儲存 ✓'; el.style.color = '#22c55e'; }
+  }
+
   function applyBotSettings() {
     const botEnabled = document.getElementById('bot-enabled').checked;
     const raw        = document.getElementById('bot-count').value.trim();

@@ -783,6 +783,53 @@ body {
   border:1px solid rgba(255,255,255,0.2);border-radius:8px;cursor:pointer;
   transition:background 0.15s;margin-top:4px;}
 #stats-close-btn:hover{background:rgba(255,255,255,0.14);}
+
+/* ═══════════════════ ITEM SYSTEM ═══════════════════ */
+#item-effect-toast {
+  display: none;
+  position: fixed;
+  top: 38%;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 400;
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 18px; font-weight: 700;
+  color: #fff;
+  background: rgba(0,0,0,0.7);
+  border: 1px solid rgba(255,255,255,0.2);
+  border-radius: 24px;
+  padding: 8px 22px;
+  letter-spacing: 1px;
+  backdrop-filter: blur(6px);
+  pointer-events: none;
+  white-space: nowrap;
+}
+#item-effect-toast.show {
+  display: block;
+  animation: itemToastAnim 2s ease forwards;
+}
+@keyframes itemToastAnim {
+  0%   { opacity:0; transform: translateX(-50%) translateY(8px); }
+  15%  { opacity:1; transform: translateX(-50%) translateY(0); }
+  70%  { opacity:1; }
+  100% { opacity:0; }
+}
+
+/* 護盾狀態指示 */
+#shield-indicator {
+  display: none;
+  position: fixed;
+  top: 72px; right: 16px;
+  z-index: 300;
+  font-size: 22px;
+  filter: drop-shadow(0 0 8px rgba(79,195,247,0.8));
+  animation: shieldPulse 1.5s ease-in-out infinite;
+}
+#shield-indicator.active { display: block; }
+@keyframes shieldPulse {
+  0%,100% { transform: scale(1); opacity:1; }
+  50%      { transform: scale(1.15); opacity:0.7; }
+}
 </style>
 </head>
 <body>
@@ -883,6 +930,10 @@ body {
   <div id="stats-survival-time">存活時間：--:--</div>
   <button id="stats-close-btn" onclick="document.getElementById('stats-screen').classList.remove('active')">繼續觀戰</button>
 </div>
+
+<!-- ══════════ ITEM EFFECT TOAST ══════════ -->
+<div id="item-effect-toast"></div>
+<div id="shield-indicator">🛡</div>
 
 <div id="hud">
   <div id="player-name">PLAYER</div>
@@ -1137,10 +1188,13 @@ function setupSocketEvents() {
     }
   });
 
-  socket.on('game:countdown', () => {
+  socket.on('game:countdown', ({ battleTimeout, maxHp } = {}) => {
     if (!state.gameStarted) {
       state.gameStarted = true;
       streakState.current=0; streakState.speedBoostUntil=0;
+      // 套用教師自訂參數
+      if (battleTimeout) CFG.BATTLE_MS = battleTimeout;
+      if (maxHp)         { CFG.MAX_HP = maxHp; state.myHp = maxHp; }
       startCountdown(() => {
         BGM.play('explore');
         initPhaserGame();
@@ -1209,6 +1263,37 @@ function setupSocketEvents() {
     if (state.spectateTargetId === targetId && gameScene) {
       gameScene.spectateMove(x, y);
     }
+  });
+
+  socket.on('game:settings_update', ({ battleTimeout, maxHp }) => {
+    // 教師套用設定後，client 即時更新 CFG
+    if (battleTimeout) CFG.BATTLE_MS = battleTimeout;
+    if (maxHp) {
+      CFG.MAX_HP = maxHp;
+      state.myHp = maxHp;  // 更新本地血量上限
+      buildHpDisplay();    // 重建 HP 顯示
+    }
+  });
+
+  // ── 道具 socket 事件 ──
+  socket.on('item:spawn', (item) => {
+    if (gameScene) gameScene.spawnItemSprite(item);
+  });
+
+  socket.on('item:remove', ({ id }) => {
+    if (gameScene) gameScene.removeItemSprite(id);
+  });
+
+  socket.on('item:effect', ({ type, msg }) => {
+    const def = ITEM_DEFS[type] || {};
+    showItemEffect(msg, def.color);
+    // 音效
+    if (typeof SFX !== 'undefined') SFX.select();
+    // 護盾狀態
+    if (type === 'shield')      setShieldUI(true);
+    if (type === 'shield_used') setShieldUI(false);
+    // 速度加成（複用連勝系統）
+    if (type === 'speed' && typeof applySpeedBoost === 'function') applySpeedBoost(5000);
   });
 
   socket.on('zone:update', zoneData => {
@@ -1630,6 +1715,37 @@ function showPersonalStats(stats, isWinner) {
   }
 }
 
+// ══════════════════════════════════════════
+//  ITEM SYSTEM (CLIENT)
+// ══════════════════════════════════════════
+// 道具類型定義（圖片可自行替換：替換 drawItem 函式中對應 type 的繪製邏輯）
+const ITEM_DEFS = {
+  shield: { emoji:'🛡', color:'#4fc3f7', label:'護盾' },
+  speed:  { emoji:'⚡', color:'#fff176', label:'加速' },
+  heal:   { emoji:'❤',  color:'#ef9a9a', label:'回血' },
+};
+
+// 地圖上的道具物件 Map（id → Phaser GameObject）
+state.itemSprites = new Map();
+state.hasShield   = false;
+
+function showItemEffect(msg, color) {
+  const el = document.getElementById('item-effect-toast');
+  if (!el) return;
+  el.textContent = msg;
+  el.style.borderColor = color || 'rgba(255,255,255,0.2)';
+  el.classList.remove('show');
+  void el.offsetWidth;
+  el.classList.add('show');
+  setTimeout(() => el.classList.remove('show'), 2000);
+}
+
+function setShieldUI(active) {
+  state.hasShield = active;
+  const el = document.getElementById('shield-indicator');
+  if (el) el.classList.toggle('active', active);
+}
+
 function initPhaserGame() {
   buildHpDisplay();
 
@@ -1791,6 +1907,12 @@ function initPhaserGame() {
 
       // ── Camera ──
       if (this.wallGroup) this.physics.add.collider(this.localPlayer, this.wallGroup);
+
+      // ── 道具群組（depth 6） ──
+      this.itemGroup = this.add.group();
+      // 初始化 itemSprites（若遊戲重開需清空）
+      state.itemSprites = new Map();
+
       this.cameras.main
         .setBounds(0,0,CFG.MAP_W,CFG.MAP_H)
         .startFollow(this.localPlayer,true,0.09,0.09)
@@ -2118,6 +2240,75 @@ function initPhaserGame() {
       this._drawFog();
       this._drawZone();
       this._drawMinimap();
+    }
+
+    // ── 道具：在地圖上生成 / 移除 ──
+    spawnItemSprite(item) {
+      const def = ITEM_DEFS[item.type] || { emoji:'?', color:'#ffffff' };
+
+      // ── 圖片替換說明 ──
+      // 目前用 Canvas 繪製幾何圖形代替圖片
+      // 若要替換為自訂圖片：
+      //   1. 把圖片放到 public/assets/item_<type>.png（shield/speed/heal）
+      //   2. 在 preload() 加：this.load.image('item_shield','assets/item_shield.png') 等
+      //   3. 把下面的 canvas 繪製改成：this.add.image(item.x, item.y, 'item_'+item.type)
+
+      // Canvas 繪製道具圖示（32×32）
+      const cv = document.createElement('canvas');
+      cv.width = cv.height = 32;
+      const ctx = cv.getContext('2d');
+
+      // 發光背景圓
+      const grad = ctx.createRadialGradient(16,16,2,16,16,14);
+      grad.addColorStop(0, def.color);
+      grad.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = grad;
+      ctx.beginPath(); ctx.arc(16,16,14,0,Math.PI*2); ctx.fill();
+
+      // emoji 文字
+      ctx.font = '16px serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(def.emoji, 16, 17);
+
+      const texKey = 'item_' + item.id;
+      if (!this.textures.exists(texKey)) {
+        this.textures.addCanvas(texKey, cv);
+      }
+
+      const sprite = this.add.image(item.x, item.y, texKey)
+        .setDepth(6).setOrigin(0.5, 0.5);
+
+      // 浮動動畫
+      this.tweens.add({
+        targets: sprite, y: item.y - 8,
+        duration: 900, yoyo: true, repeat: -1, ease: 'Sine.easeInOut',
+      });
+
+      // 旋轉光圈
+      const ring = this.add.graphics().setDepth(5);
+      ring.lineStyle(2, parseInt(def.color.replace('#','0x')), 0.6);
+      ring.strokeCircle(item.x, item.y, 18);
+
+      state.itemSprites.set(item.id, { sprite, ring, texKey });
+    }
+
+    removeItemSprite(id) {
+      const obj = state.itemSprites.get(id);
+      if (!obj) return;
+      this.tweens.killTweensOf(obj.sprite);
+      // 拾取閃光效果
+      this.tweens.add({
+        targets: obj.sprite, alpha:0, scaleX:2, scaleY:2,
+        duration:300, ease:'Power2',
+        onComplete: () => {
+          obj.sprite.destroy();
+          obj.ring.destroy();
+          if (this.textures.exists(obj.texKey)) this.textures.remove(obj.texKey);
+        }
+      });
+      obj.ring.destroy();
+      state.itemSprites.delete(id);
     }
 
     _move() {
