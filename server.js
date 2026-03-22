@@ -870,23 +870,12 @@ function eliminate(room, pid) {
 
   const survivalMs = Date.now() - (p.joinedAt || Date.now());
   const totalBattles = (p.battleWins||0)+(p.battleLoses||0)+(p.battleDraws||0);
-  const accuracy = totalBattles > 0
-    ? Math.round((p.correctAnswers||0) / totalBattles * 100)
-    : 0;
-
+  const accuracy = totalBattles > 0 ? Math.round((p.correctAnswers||0)/totalBattles*100) : 0;
   io.to(pid).emit('player:eliminated',{
     spectateTargets: targets,
-    stats: {
-      battleWins:    p.battleWins||0,
-      battleLoses:   p.battleLoses||0,
-      battleDraws:   p.battleDraws||0,
-      correctAnswers:p.correctAnswers||0,
-      totalBattles,
-      accuracy,
-      maxStreak:     p.maxStreak||0,
-      survivalMs,
-      finalHp:       p.hp,
-    }
+    stats: { battleWins:p.battleWins||0, battleLoses:p.battleLoses||0, battleDraws:p.battleDraws||0,
+             correctAnswers:p.correctAnswers||0, totalBattles, accuracy,
+             maxStreak:p.maxStreak||0, survivalMs, finalHp:p.hp }
   });
   room.stats.totalElim++;
   toTeachers(room.id,'teacher:eliminated',{
@@ -900,25 +889,13 @@ function eliminate(room, pid) {
     const w=alive[0];
     if(w) {
       io.to(room.id).emit('game:winner',{ winnerId:w.id, winnerName:w.name });
-      // 單獨送個人統計給勝者
-      const survivalMs = Date.now() - (w.joinedAt || Date.now());
+      const survivalMs = Date.now() - (w.joinedAt||Date.now());
       const totalBattles = (w.battleWins||0)+(w.battleLoses||0)+(w.battleDraws||0);
-      const accuracy = totalBattles > 0
-        ? Math.round((w.correctAnswers||0) / totalBattles * 100) : 0;
-      io.to(w.id).emit('player:final_stats', {
-        isWinner: true,
-        stats: {
-          battleWins:    w.battleWins||0,
-          battleLoses:   w.battleLoses||0,
-          battleDraws:   w.battleDraws||0,
-          correctAnswers:w.correctAnswers||0,
-          totalBattles,
-          accuracy,
-          maxStreak:     w.maxStreak||0,
-          survivalMs,
-          finalHp:       w.hp,
-        }
-      });
+      const accuracy = totalBattles>0 ? Math.round((w.correctAnswers||0)/totalBattles*100) : 0;
+      io.to(w.id).emit('player:final_stats',{ isWinner:true,
+        stats:{ battleWins:w.battleWins||0, battleLoses:w.battleLoses||0, battleDraws:w.battleDraws||0,
+                correctAnswers:w.correctAnswers||0, totalBattles, accuracy,
+                maxStreak:w.maxStreak||0, survivalMs, finalHp:w.hp }});
       toTeachers(room.id,'teacher:game_state',{ state:'ended' });
       console.log(`[Win] ${w.name}`);
     }
@@ -1105,12 +1082,10 @@ function resolveBattle(room, battle, isTimeout) {
     if(w){
       w.wins = (w.wins||0)+1;
       w.battleWins = (w.battleWins||0)+1;
-      // 勝者答題正確
       const wAns2 = battle.answers.get(w.id);
       if(wAns2?.isCorrect) w.correctAnswers = (w.correctAnswers||0)+1;
       w.streak = (w.streak||0)+1;
       w.maxStreak = Math.max(w.maxStreak||0, w.streak);
-      // 連勝回血：連勝 3 或 5+ 且未滿血時回復 1 滴
       let healed = false;
       if((w.streak===3 || w.streak>=5) && w.hp < CONFIG.MAX_HP && !w.isBot){
         w.hp = Math.min(CONFIG.MAX_HP, w.hp+1);
@@ -1118,7 +1093,6 @@ function resolveBattle(room, battle, isTimeout) {
         toTeachers(room.id,'teacher:hp_update',{ playerId:w.id, newHp:w.hp });
         healed = true;
       }
-      // 速度加成：連勝 2+ 給予 speedBoostUntil
       if(w.streak>=2 && !w.isBot){
         const boostSec = w.streak>=5 ? 5000 : 3000;
         w.speedBoostUntil = Date.now() + boostSec;
@@ -1135,16 +1109,12 @@ function resolveBattle(room, battle, isTimeout) {
       l.battleLoses = (l.battleLoses||0)+1;
       const lAns2 = battle.answers.get(l.id);
       if(lAns2 && !lAns2.isCorrect) l.wrongAnswers = (l.wrongAnswers||0)+1;
-      else if(!lAns2) l.wrongAnswers = (l.wrongAnswers||0)+1; // timeout
+      else if(!lAns2) l.wrongAnswers = (l.wrongAnswers||0)+1;
     }
   }
-  // draw: 雙方 streak 歸零，各記一平
   if(!winnerId && !loserId){
     [pA,pB].forEach(p=>{
-      if(p){
-        p.streak=0;
-        p.battleDraws = (p.battleDraws||0)+1;
-      }
+      if(p){ p.streak=0; p.battleDraws=(p.battleDraws||0)+1; }
     });
   }
 
@@ -1636,6 +1606,11 @@ io.on('connection', socket => {
     if (/^char([1-9]|10)$/.test(charKey)) {
       curPlayer.charKey = charKey;
     }
+  });
+
+  socket.on('player:char', ({ charKey }) => {
+    if (!curPlayer) return;
+    if (/^char([1-9]|10)$/.test(charKey)) curPlayer.charKey = charKey;
   });
 
   socket.on('player:move', ({ x, y, timestamp }) => {
