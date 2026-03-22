@@ -727,171 +727,62 @@ body {
 #char-confirm-btn:active { transform: translateY(0); }
 
 /* ═══════════════════ STREAK ═══════════════════ */
-#streak-banner {
-  display: none;
-  position: fixed;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%) scale(0.5);
-  z-index: 500;
-  text-align: center;
-  pointer-events: none;
-  transition: none;
-}
-#streak-banner.show {
-  display: block;
-  animation: streakPop 0.8s cubic-bezier(0.175,0.885,0.32,1.275) forwards;
-}
+#streak-banner { display:none; position:fixed; top:50%; left:50%;
+  transform:translate(-50%,-50%) scale(0.5); z-index:500;
+  text-align:center; pointer-events:none; }
+#streak-banner.show { display:block;
+  animation:streakPop 0.8s cubic-bezier(0.175,0.885,0.32,1.275) forwards; }
 @keyframes streakPop {
-  0%   { transform: translate(-50%,-50%) scale(0.3); opacity:0; }
-  50%  { transform: translate(-50%,-50%) scale(1.15); opacity:1; }
-  70%  { transform: translate(-50%,-50%) scale(0.95); opacity:1; }
-  85%  { transform: translate(-50%,-50%) scale(1.05); opacity:1; }
-  100% { transform: translate(-50%,-50%) scale(1); opacity:0; }
-}
-#streak-emoji {
-  font-size: 52px;
-  display: block;
-  filter: drop-shadow(0 0 16px rgba(255,160,0,0.9));
-}
-#streak-text {
-  font-family: 'Rajdhani', sans-serif;
-  font-size: 32px;
-  font-weight: 700;
-  color: #fff;
-  text-shadow: 0 0 20px rgba(255,140,0,0.8), 0 2px 4px rgba(0,0,0,0.8);
-  letter-spacing: 3px;
-  display: block;
-  margin-top: -4px;
-}
-#streak-sub {
-  font-family: 'Noto Sans TC', sans-serif;
-  font-size: 14px;
-  color: #ffdd88;
-  display: block;
-  margin-top: 4px;
-  text-shadow: 0 1px 3px rgba(0,0,0,0.8);
-}
+  0%  {transform:translate(-50%,-50%) scale(0.3);opacity:0;}
+  50% {transform:translate(-50%,-50%) scale(1.15);opacity:1;}
+  85% {transform:translate(-50%,-50%) scale(1.05);opacity:1;}
+  100%{transform:translate(-50%,-50%) scale(1);opacity:0;} }
+#streak-emoji{font-size:52px;display:block;filter:drop-shadow(0 0 16px rgba(255,160,0,0.9));}
+#streak-text{font-family:'Rajdhani',sans-serif;font-size:32px;font-weight:700;
+  color:#fff;text-shadow:0 0 20px rgba(255,140,0,0.8),0 2px 4px rgba(0,0,0,0.8);
+  letter-spacing:3px;display:block;margin-top:-4px;}
+#streak-sub{font-family:'Noto Sans TC',sans-serif;font-size:14px;color:#ffdd88;
+  display:block;margin-top:4px;text-shadow:0 1px 3px rgba(0,0,0,0.8);}
+#speed-boost-bar{display:none;position:fixed;bottom:100px;left:50%;
+  transform:translateX(-50%);z-index:300;background:rgba(255,140,0,0.15);
+  border:1px solid rgba(255,140,0,0.5);border-radius:20px;padding:4px 14px;
+  font-family:'Rajdhani',sans-serif;font-size:13px;color:#ffbb44;letter-spacing:1px;
+  backdrop-filter:blur(4px);}
+#speed-boost-bar.active{display:block;}
 
-/* 速度加成指示器 */
-#speed-boost-bar {
-  display: none;
-  position: fixed;
-  bottom: 100px;
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 300;
-  background: rgba(255,140,0,0.15);
-  border: 1px solid rgba(255,140,0,0.5);
-  border-radius: 20px;
-  padding: 4px 14px;
-  font-family: 'Rajdhani', sans-serif;
-  font-size: 13px;
-  color: #ffbb44;
-  letter-spacing: 1px;
-  backdrop-filter: blur(4px);
-}
-#speed-boost-bar.active { display: block; }
-
-/* ═══════════════════ PERSONAL STATS SCREEN ═══════════════════ */
-#stats-screen {
-  display: none;
-  position: fixed; inset: 0; z-index: 600;
-  background: linear-gradient(160deg, #0a0e1a 0%, #111827 60%, #0a0e1a 100%);
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 20px;
-  padding: 24px;
-}
-#stats-screen.active { display: flex; }
-
-#stats-title {
-  font-family: 'Rajdhani', sans-serif;
-  font-size: 13px; letter-spacing: 4px;
-  color: var(--muted); text-transform: uppercase;
-  margin-bottom: -8px;
-}
-#stats-result-badge {
-  font-family: 'Rajdhani', sans-serif;
-  font-size: 48px; font-weight: 700;
-  letter-spacing: 6px;
-  animation: statsGlow 2s ease-in-out infinite alternate;
-}
-#stats-result-badge.winner { color: var(--gold); text-shadow: 0 0 30px rgba(245,200,66,0.7); }
-#stats-result-badge.loser  { color: #e55; text-shadow: 0 0 20px rgba(220,80,80,0.5); }
-
-@keyframes statsGlow {
-  from { filter: brightness(1); }
-  to   { filter: brightness(1.3); }
-}
-
-#stats-card {
-  background: rgba(255,255,255,0.04);
-  border: 1px solid rgba(255,255,255,0.1);
-  border-radius: 16px;
-  padding: 24px 32px;
-  width: 100%; max-width: 420px;
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 16px 24px;
-}
-
-.stat-item {
-  display: flex; flex-direction: column;
-  align-items: center; gap: 4px;
-}
-.stat-value {
-  font-family: 'Rajdhani', sans-serif;
-  font-size: 36px; font-weight: 700;
-  color: #fff; line-height: 1;
-}
-.stat-value.highlight { color: var(--gold); }
-.stat-label {
-  font-family: 'Noto Sans TC', sans-serif;
-  font-size: 11px; color: var(--muted);
-  letter-spacing: 1px; text-align: center;
-}
-
-#stats-accuracy-bar-wrap {
-  width: 100%; max-width: 420px;
-}
-#stats-accuracy-label {
-  font-family: 'Noto Sans TC', sans-serif;
-  font-size: 12px; color: var(--muted);
-  margin-bottom: 6px; letter-spacing: 1px;
-}
-#stats-accuracy-bar {
-  height: 10px;
-  background: rgba(255,255,255,0.08);
-  border-radius: 99px; overflow: hidden;
-}
-#stats-accuracy-fill {
-  height: 100%;
-  background: linear-gradient(90deg, #22c55e, #86efac);
-  border-radius: 99px;
-  transition: width 1.2s cubic-bezier(0.34,1.56,0.64,1);
-  width: 0%;
-}
-
-#stats-survival-time {
-  font-family: 'Rajdhani', sans-serif;
-  font-size: 14px; color: var(--muted);
-  letter-spacing: 2px;
-}
-
-#stats-close-btn {
-  padding: 12px 40px;
-  font-family: 'Rajdhani', sans-serif;
-  font-size: 16px; font-weight: 700;
-  letter-spacing: 2px;
-  background: rgba(255,255,255,0.08);
-  color: #fff; border: 1px solid rgba(255,255,255,0.2);
-  border-radius: 8px; cursor: pointer;
-  transition: background 0.15s;
-  margin-top: 4px;
-}
-#stats-close-btn:hover { background: rgba(255,255,255,0.14); }
+/* ═══════════════════ PERSONAL STATS ═══════════════════ */
+#stats-screen{display:none;position:fixed;inset:0;z-index:700;
+  background:linear-gradient(160deg,#0a0e1a 0%,#111827 60%,#0a0e1a 100%);
+  flex-direction:column;align-items:center;justify-content:center;gap:20px;padding:24px;}
+#stats-screen.active{display:flex;}
+#stats-title{font-family:'Rajdhani',sans-serif;font-size:13px;letter-spacing:4px;
+  color:var(--muted);text-transform:uppercase;margin-bottom:-8px;}
+#stats-result-badge{font-family:'Rajdhani',sans-serif;font-size:48px;font-weight:700;
+  letter-spacing:6px;animation:statsGlow 2s ease-in-out infinite alternate;}
+#stats-result-badge.winner{color:var(--gold);text-shadow:0 0 30px rgba(245,200,66,0.7);}
+#stats-result-badge.loser{color:#e55;text-shadow:0 0 20px rgba(220,80,80,0.5);}
+@keyframes statsGlow{from{filter:brightness(1);}to{filter:brightness(1.3);}}
+#stats-card{background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);
+  border-radius:16px;padding:24px 32px;width:100%;max-width:420px;
+  display:grid;grid-template-columns:1fr 1fr;gap:16px 24px;}
+.stat-item{display:flex;flex-direction:column;align-items:center;gap:4px;}
+.stat-value{font-family:'Rajdhani',sans-serif;font-size:36px;font-weight:700;color:#fff;line-height:1;}
+.stat-value.highlight{color:var(--gold);}
+.stat-label{font-family:'Noto Sans TC',sans-serif;font-size:11px;color:var(--muted);
+  letter-spacing:1px;text-align:center;}
+#stats-accuracy-bar-wrap{width:100%;max-width:420px;}
+#stats-accuracy-label{font-family:'Noto Sans TC',sans-serif;font-size:12px;
+  color:var(--muted);margin-bottom:6px;letter-spacing:1px;}
+#stats-accuracy-bar{height:10px;background:rgba(255,255,255,0.08);border-radius:99px;overflow:hidden;}
+#stats-accuracy-fill{height:100%;background:linear-gradient(90deg,#22c55e,#86efac);
+  border-radius:99px;transition:width 1.2s cubic-bezier(0.34,1.56,0.64,1);width:0%;}
+#stats-survival-time{font-family:'Rajdhani',sans-serif;font-size:14px;
+  color:var(--muted);letter-spacing:2px;}
+#stats-close-btn{padding:12px 40px;font-family:'Rajdhani',sans-serif;font-size:16px;
+  font-weight:700;letter-spacing:2px;background:rgba(255,255,255,0.08);color:#fff;
+  border:1px solid rgba(255,255,255,0.2);border-radius:8px;cursor:pointer;
+  transition:background 0.15s;margin-top:4px;}
+#stats-close-btn:hover{background:rgba(255,255,255,0.14);}
 </style>
 </head>
 <body>
@@ -955,7 +846,7 @@ body {
   <button id="char-confirm-btn">確認出戰</button>
 </div>
 
-<!-- ══════════ STREAK BANNER ══════════ -->
+<!-- streak banner -->
 <div id="streak-banner">
   <span id="streak-emoji">🔥</span>
   <span id="streak-text">STREAK!</span>
@@ -963,7 +854,7 @@ body {
 </div>
 <div id="speed-boost-bar">⚡ 速度加成中</div>
 
-<!-- ══════════ PERSONAL STATS SCREEN ══════════ -->
+<!-- personal stats -->
 <div id="stats-screen">
   <div id="stats-title">本局成績</div>
   <div id="stats-result-badge">ELIMINATED</div>
@@ -987,14 +878,10 @@ body {
   </div>
   <div id="stats-accuracy-bar-wrap">
     <div id="stats-accuracy-label">答題正確率</div>
-    <div id="stats-accuracy-bar">
-      <div id="stats-accuracy-fill"></div>
-    </div>
+    <div id="stats-accuracy-bar"><div id="stats-accuracy-fill"></div></div>
   </div>
   <div id="stats-survival-time">存活時間：--:--</div>
-  <button id="stats-close-btn" onclick="document.getElementById('stats-screen').classList.remove('active')">
-    繼續觀戰
-  </button>
+  <button id="stats-close-btn" onclick="document.getElementById('stats-screen').classList.remove('active')">繼續觀戰</button>
 </div>
 
 <div id="hud">
@@ -1083,6 +970,10 @@ body {
   <div class="winner-crown">👑</div>
   <div class="winner-label">Victory Royale</div>
   <div class="winner-name" id="winner-name"></div>
+  <button class="winner-btn" id="winner-stats-btn" style="display:none"
+    onclick="document.getElementById('stats-screen').classList.add('active')">
+    📊 查看本局成績
+  </button>
   <button class="winner-btn" onclick="location.reload()">再玩一次</button>
 </div>
 
@@ -1249,8 +1140,7 @@ function setupSocketEvents() {
   socket.on('game:countdown', () => {
     if (!state.gameStarted) {
       state.gameStarted = true;
-      streakState.current = 0;
-      streakState.speedBoostUntil = 0;
+      streakState.current=0; streakState.speedBoostUntil=0;
       startCountdown(() => {
         BGM.play('explore');
         initPhaserGame();
@@ -1287,11 +1177,7 @@ function setupSocketEvents() {
 
   socket.on('player:streak', ({ streak, speedBoostMs, healed }) => {
     streakState.current = streak;
-    if (streak >= 2) {
-      showStreakBanner(streak, healed);
-      if (speedBoostMs > 0) applySpeedBoost(speedBoostMs);
-    }
-    if (healed && gameScene) gameScene.updateHpDisplay(state.myHp + 1);
+    if(streak>=2){ showStreakBanner(streak,healed); if(speedBoostMs>0) applySpeedBoost(speedBoostMs); }
   });
 
   socket.on('player:hp_update', ({ playerId, newHp, source }) => {
@@ -1308,7 +1194,7 @@ function setupSocketEvents() {
     BGM.play('gameover', { loop:false, volume:0.5, fadeIn:0.3 });
     showEliminatedUI(spectateTargets);
     addKillFeed('你被淘汰了', true);
-    if (stats) showPersonalStats(stats, false);
+    if(stats) showPersonalStats(stats, false);
   });
 
   socket.on('player:position_correct', ({ x, y }) => {
@@ -1338,10 +1224,14 @@ function setupSocketEvents() {
 
   socket.on('game:winner', ({ winnerId, winnerName }) => {
     showWinnerScreen(winnerName, winnerId === state.myId);
+    // 勝者：立即顯示「查看成績」按鈕，不等 player:final_stats
+    if (winnerId === state.myId) {
+      const btn = document.getElementById('winner-stats-btn');
+      if (btn) btn.style.display = '';
+    }
   });
-
   socket.on('player:final_stats', ({ isWinner, stats }) => {
-    if (stats) showPersonalStats(stats, isWinner);
+    if(stats) showPersonalStats(stats, isWinner);
   });
 
   socket.on('game:kicked', () => {
@@ -1660,100 +1550,84 @@ const BGM = (() => {
 // ══════════════════════════════════════════
 //  STREAK SYSTEM
 // ══════════════════════════════════════════
-const streakState = {
-  current: 0,
-  speedBoostUntil: 0,
-  boostTimer: null,
-};
+const streakState = { current:0, speedBoostUntil:0, boostTimer:null };
 
 function showStreakBanner(streak, healed) {
-  const banner = document.getElementById('streak-banner');
-  const emoji  = document.getElementById('streak-emoji');
-  const text   = document.getElementById('streak-text');
-  const sub    = document.getElementById('streak-sub');
-
-  // 決定顯示內容
-  const configs = {
-    2: { emoji:'🔥', text:'連勝 × 2！',  sub:'速度加成 3 秒！', color:'#ff8c00' },
-    3: { emoji:'🔥🔥', text:'連勝 × 3！', sub:'速度加成 + 回血！', color:'#ff6000' },
-    4: { emoji:'💥', text:'連勝 × 4！',  sub:'勢不可擋！',       color:'#ff4000' },
-    5: { emoji:'⚡💥⚡', text:'連勝 × 5！',sub:'速度加成 5 秒 + 回血！', color:'#ff2000' },
+  const banner=document.getElementById('streak-banner');
+  const emoji=document.getElementById('streak-emoji');
+  const text=document.getElementById('streak-text');
+  const sub=document.getElementById('streak-sub');
+  const cfgs={
+    2:{emoji:'🔥',text:'連勝 × 2！',sub:'速度加成 3 秒！',color:'#ff8c00'},
+    3:{emoji:'🔥🔥',text:'連勝 × 3！',sub:'速度加成 + 回血！',color:'#ff6000'},
+    4:{emoji:'💥',text:'連勝 × 4！',sub:'勢不可擋！',color:'#ff4000'},
+    5:{emoji:'⚡💥⚡',text:'連勝 × 5！',sub:'速度加成 5 秒 + 回血！',color:'#ff2000'},
   };
-  const cfg = configs[Math.min(streak, 5)] || configs[5];
-
-  emoji.textContent = cfg.emoji;
-  text.textContent  = cfg.text;
-  text.style.color  = cfg.color;
-  sub.textContent   = healed ? cfg.sub + ' ❤ 回血！' : cfg.sub;
-
-  // 重置動畫
-  banner.classList.remove('show');
-  void banner.offsetWidth;
-  banner.classList.add('show');
-
-  // 音效：連勝專屬（用 SFX 組合）
-  SFX.win();
-  setTimeout(() => SFX.invincible(), 200);
-
-  setTimeout(() => banner.classList.remove('show'), 1500);
+  const cfg=cfgs[Math.min(streak,5)]||cfgs[5];
+  emoji.textContent=cfg.emoji; text.textContent=cfg.text; text.style.color=cfg.color;
+  sub.textContent=healed?cfg.sub+' ❤ 回血！':cfg.sub;
+  banner.classList.remove('show'); void banner.offsetWidth; banner.classList.add('show');
+  SFX.win(); setTimeout(()=>SFX.invincible(),200);
+  setTimeout(()=>banner.classList.remove('show'),1500);
 }
 
 function applySpeedBoost(ms) {
-  streakState.speedBoostUntil = Date.now() + ms;
-  const bar = document.getElementById('speed-boost-bar');
+  streakState.speedBoostUntil=Date.now()+ms;
+  const bar=document.getElementById('speed-boost-bar');
   bar.classList.add('active');
-  bar.textContent = `⚡ 速度加成中`;
-
-  if (streakState.boostTimer) clearTimeout(streakState.boostTimer);
-  streakState.boostTimer = setTimeout(() => {
-    streakState.speedBoostUntil = 0;
-    bar.classList.remove('active');
-  }, ms);
+  if(streakState.boostTimer) clearTimeout(streakState.boostTimer);
+  streakState.boostTimer=setTimeout(()=>{ streakState.speedBoostUntil=0; bar.classList.remove('active'); },ms);
 }
 
-// 供 _move() 使用的速度倍率
 function getSpeedMultiplier() {
-  if (Date.now() < streakState.speedBoostUntil) return 1.25;
-  return 1.0;
+  return Date.now()<streakState.speedBoostUntil ? 1.25 : 1.0;
 }
 
 // ══════════════════════════════════════════
 //  PERSONAL STATS SCREEN
 // ══════════════════════════════════════════
 function showPersonalStats(stats, isWinner) {
-  const screen = document.getElementById('stats-screen');
-  const badge  = document.getElementById('stats-result-badge');
-
-  if (isWinner) {
-    badge.textContent = '🏆 WINNER!';
-    badge.className   = 'winner';
-    document.getElementById('stats-close-btn').textContent = '查看排行';
-  } else {
-    badge.textContent = 'ELIMINATED';
-    badge.className   = 'loser';
-    document.getElementById('stats-close-btn').textContent = '繼續觀戰';
-  }
-
+  const screen=document.getElementById('stats-screen');
+  const badge=document.getElementById('stats-result-badge');
+  if(isWinner){ badge.textContent='🏆 WINNER!'; badge.className='winner';
+    document.getElementById('stats-close-btn').textContent='查看排行';
+  } else { badge.textContent='ELIMINATED'; badge.className='loser';
+    document.getElementById('stats-close-btn').textContent='繼續觀戰'; }
   document.getElementById('stat-wins').textContent    = stats.battleWins;
   document.getElementById('stat-streak').textContent  = stats.maxStreak;
   document.getElementById('stat-correct').textContent = stats.correctAnswers;
   document.getElementById('stat-battles').textContent = stats.totalBattles;
-
-  // 正確率進度條（動畫）
-  const fill = document.getElementById('stats-accuracy-fill');
-  fill.style.width = '0%';
-  setTimeout(() => { fill.style.width = stats.accuracy + '%'; }, 100);
-  document.getElementById('stats-accuracy-label').textContent =
-    `答題正確率　${stats.accuracy}%`;
-
-  // 存活時間
-  const totalSec = Math.floor((stats.survivalMs || 0) / 1000);
-  const mm = String(Math.floor(totalSec / 60)).padStart(2, '0');
-  const ss = String(totalSec % 60).padStart(2, '0');
-  document.getElementById('stats-survival-time').textContent = `存活時間：${mm}:${ss}`;
-
-  // 延遲顯示（讓淘汰動畫先跑完）
-  setTimeout(() => screen.classList.add('active'), isWinner ? 1500 : 2000);
+  const fill=document.getElementById('stats-accuracy-fill');
+  fill.style.width='0%';
+  setTimeout(()=>{ fill.style.width=stats.accuracy+'%'; },100);
+  document.getElementById('stats-accuracy-label').textContent=`答題正確率　${stats.accuracy}%`;
+  const totalSec=Math.floor((stats.survivalMs||0)/1000);
+  const mm=String(Math.floor(totalSec/60)).padStart(2,'0');
+  const ss=String(totalSec%60).padStart(2,'0');
+  document.getElementById('stats-survival-time').textContent=`存活時間：${mm}:${ss}`;
+  if (isWinner) {
+    // 勝者：不自動彈出統計，改為在 winner-screen 顯示「查看成績」按鈕
+    const btn = document.getElementById('winner-stats-btn');
+    if (btn) {
+      btn.style.display = '';
+      // 統計資料先存起來，點按鈕後再顯示
+      btn.onclick = () => screen.classList.add('active');
+    }
+    // 統計畫面的關閉按鈕改為隱藏統計、回 winner-screen
+    const closeBtn = document.getElementById('stats-close-btn');
+    if (closeBtn) {
+      closeBtn.textContent = '✕ 關閉';
+      closeBtn.onclick = () => screen.classList.remove('active');
+    }
+  } else {
+    // 被淘汰：2 秒後自動彈出
+    setTimeout(()=>screen.classList.add('active'), 2000);
+    const closeBtn = document.getElementById('stats-close-btn');
+    if (closeBtn) {
+      closeBtn.textContent = '繼續觀戰';
+      closeBtn.onclick = () => screen.classList.remove('active');
+    }
+  }
 }
 
 function initPhaserGame() {
@@ -1982,14 +1856,6 @@ function initPhaserGame() {
         rp.targetX = p.x;
         rp.targetY = p.y;
         rp.hp = p.hp; rp.isAlive = p.isAlive; rp.isBot = !!p.isBot;
-        // 更新連勝標記
-        const newStreak = p.streak || 0;
-        if (newStreak !== rp.streak) {
-          rp.streak = newStreak;
-          if (rp.streakText) {
-            rp.streakText.setText(newStreak >= 2 ? '🔥'.repeat(Math.min(newStreak,5)) : '');
-          }
-        }
 
         // alive / ghost — 只在狀態改變時才切換，不打斷動畫
         const wasAlive = rp._wasAlive !== false;
@@ -2020,7 +1886,6 @@ function initPhaserGame() {
           rp.sprite.destroy();
           rp.nameText.destroy();
           if(rp.shadow) rp.shadow.destroy();
-          if(rp.streakText) rp.streakText.destroy();
           state.remotePlayers.delete(id);
         }
       });
@@ -2040,21 +1905,14 @@ function initPhaserGame() {
       }).setOrigin(0.5,1).setDepth(10);
       sprite.play(animPrefix + 'idle_down');
 
-      // 連勝標記文字（顯示在名字上方）
-      const streakText = this.add.text(p.x, p.y-62, '', {
-        fontFamily:'Rajdhani', fontSize:'12px',
-        color:'#ffaa00', stroke:'#000', strokeThickness:3,
-      }).setOrigin(0.5,1).setDepth(11);
-
       state.remotePlayers.set(p.id, {
-        sprite, nameText, shadow, streakText,
+        sprite, nameText, shadow,
         hp:p.hp, isAlive:p.isAlive, isBot:!!p.isBot,
         botSheet:p.botSheet||1, botTint:p.botTint||null,
         animPrefix,
         facing:'down', wasMoving:false,
         serverX:p.x, serverY:p.y,
         targetX:p.x, targetY:p.y,
-        streak:0,
       });
     }
 
@@ -2264,7 +2122,7 @@ function initPhaserGame() {
 
     _move() {
       const k = this.keys;
-      const sp = CFG.SPEED * (typeof getSpeedMultiplier==='function' ? getSpeedMultiplier() : 1);
+      const sp = CFG.SPEED * (typeof getSpeedMultiplier==='function'?getSpeedMultiplier():1);
       let vx=0, vy=0;
       // ── Keyboard ──
       if(k.A.isDown||k.LEFT.isDown)  vx-=1;
@@ -2310,10 +2168,6 @@ function initPhaserGame() {
           else { rp.sprite.y += dy * LERP; }
 
           rp.nameText.setPosition(rp.sprite.x, rp.sprite.y - 48);
-          // 連勝火焰標記
-          if (rp.streak >= 2 && rp.streakText) {
-            rp.streakText.setPosition(rp.sprite.x, rp.sprite.y - 62);
-          }
           if(rp.shadow) rp.shadow.setPosition(rp.sprite.x, rp.sprite.y - 2);
         }
         if(!rp.isAlive) return;
